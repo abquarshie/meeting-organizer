@@ -1,0 +1,947 @@
+# -*- coding: utf-8 -*-
+"""Database behaviour: upgrades, participants, backups, reports."""
+import json
+from datetime import date, timedelta
+
+
+
+def test_ga_letters_converted_when_enabled(core):
+    core.set_setting("ga_convert", "1")
+    core.add_student("K3kN)", "Brother", [])
+    core.add_student("Naa Ode", "Sister", [])
+    names = set(core.get_students()["name"])
+    assert {"Kɛkŋɔ", "Naa Ode"} <= names
+
+
+def test_suspension_and_away(core, people):
+    today = date.today()
+    core.set_suspension(people["Ama Owusu"], True, (today + timedelta(days=5)).isoformat())
+    students = core.get_students()
+    assert people["Ama Owusu"] in core.get_suspended(students, today.isoformat())
+    later = (today + timedelta(days=6)).isoformat()
+    assert people["Ama Owusu"] not in core.get_suspended(students, later)  # lifts itself
+
+    core.set_unavailable(people["Efua Osei"],
+                         [(today + timedelta(days=n)).isoformat() for n in (0, 1, 2, 5)])
+    assert people["Efua Osei"] in core.get_unavailable(today.isoformat())
+    summary = core.away_summary(core.unavailable_dates(people["Efua Osei"]))
+    assert summary.count("–") == 1 and "," in summary
+
+
+def test_family_assistant_and_suggest(core, people):
+    students = core.get_students()
+    pool = core.assistant_pool(students, people["Kojo Mensah"], set())
+    assert people["Esi Mensah"] in pool          # mother may assist her son
+    assert people["Ama Owusu"] not in pool       # an unrelated sister may not
+    slots = core.apply_aux(core.build_midweek_slots(core.default_midweek_parts()), True)
+    away = {people["Kofi Mensah"]}
+    picks = core.suggest_assignments(slots, students, away, date.today().isoformat())
+    chosen = [p for pair in picks.values() for p in pair if p]
+    assert people["Kofi Mensah"] not in chosen
+    assert len(chosen) == len(set(chosen))       # nobody twice
+
+
+def test_backup_round_trip(core, people):
+    slots = core.build_midweek_slots(core.default_midweek_parts())
+    core.save_schedule("2026-09-16", core.MIDWEEK, slots,
+                       {0: (people["Kofi Mensah"], None)},
+                       {"heading": "SEPT", "aux": False}, {people["Kofi Mensah"]: "Kofi"})
+    backup = json.loads(core.backup_bytes())
+    assert len(backup["students"]) == len(people)
+
+    core.delete_schedule("2026-09-16", core.MIDWEEK)
+    core.delete_student(people["Yaw Adjei"])
+    counts = core.import_all(backup)
+    assert counts["students"] == len(people)
+    assert len(core.get_schedules()) == len(slots)
+    assert core.get_meeting_meta("2026-09-16", core.MIDWEEK)["heading"] == "SEPT"
+    actions = set(core.get_log()["action"])
+    assert {"Schedule saved", "Data restored"} <= actions
+
+
+def test_report_counts_parts_and_assisting(core, people):
+    from reports import build_report
+    slots = core.build_midweek_slots(core.default_midweek_parts())
+    ip = next(i for i, s in enumerate(slots) if s["role"] == "Initial Presentation")
+    core.save_schedule(date.today().isoformat(), core.MIDWEEK, slots,
+                       {ip: (people["Ama Owusu"], people["Efua Osei"])}, {}, {})
+    report = build_report(core.get_students(), core.get_schedules(),
+                          "2000-01-01", "2999-01-01").set_index("Name")
+    assert report.loc["Ama Owusu", "Parts"] == 1
+    assert report.loc["Efua Osei", "Assisting"] == 1
+    assert report.loc["Yaw Adjei", "Total"] == 0
+
+
+def test_undo_restores_the_previous_save(core, people):
+    slots = core.build_midweek_slots(core.default_midweek_parts())
+    ip = next(i for i, s in enumerate(slots) if s["role"] == "Initial Presentation")
+    names = dict(zip(core.get_students()["id"], core.get_students()["name"]))
+
+    assert core.last_snapshot("2026-09-16", core.MIDWEEK) is None
+    assert core.undo_last("2026-09-16", core.MIDWEEK) is None      # nothing to undo yet
+
+    core.save_schedule("2026-09-16", core.MIDWEEK, slots,
+                       {ip: (people["Ama Owusu"], people["Efua Osei"])},
+                       {"heading": "FIRST"}, names)
+    core.save_schedule("2026-09-16", core.MIDWEEK, slots,
+                       {ip: (people["Esi Mensah"], None)},
+                       {"heading": "SECOND"}, names)
+
+    df = core.get_schedules()
+    row = df[(df["meeting_date"] == "2026-09-16") & (df["role"] == "Initial Presentation")]
+    assert row["person"].iloc[0] == "Esi Mensah"
+
+    snap = core.last_snapshot("2026-09-16", core.MIDWEEK)
+    assert snap["reason"] == "before save" and snap["rows"] == len(slots)
+
+    core.undo_last("2026-09-16", core.MIDWEEK)
+    df = core.get_schedules()
+    row = df[(df["meeting_date"] == "2026-09-16") & (df["role"] == "Initial Presentation")]
+    assert row["person"].iloc[0] == "Ama Owusu"                    # the first save is back
+    assert row["assistant"].iloc[0] == "Efua Osei"
+    assert core.get_meeting_meta("2026-09-16", core.MIDWEEK)["heading"] == "FIRST"
+
+    core.undo_last("2026-09-16", core.MIDWEEK)                     # undo is itself undoable
+    df = core.get_schedules()
+    row = df[(df["meeting_date"] == "2026-09-16") & (df["role"] == "Initial Presentation")]
+    assert row["person"].iloc[0] == "Esi Mensah"
+    assert "Save undone" in set(core.get_log()["action"])
+
+
+def test_undo_after_delete_and_after_a_first_save(core, people):
+    slots = core.build_midweek_slots(core.default_midweek_parts())
+    names = dict(zip(core.get_students()["id"], core.get_students()["name"]))
+    core.save_schedule("2026-09-23", core.MIDWEEK, slots,
+                       {0: (people["Kofi Mensah"], None)}, {}, names)
+
+    core.delete_schedule("2026-09-23", core.MIDWEEK)
+    assert core.get_schedules().empty
+    core.undo_last("2026-09-23", core.MIDWEEK)
+    assert len(core.get_schedules()) == len(slots)                 # delete is undoable
+
+    # undoing back past the very first save leaves nothing, not a half-saved meeting
+    for _ in range(4):
+        core.undo_last("2026-09-23", core.MIDWEEK)
+    core.undo_last("2026-09-23", core.MIDWEEK)
+    rows = core.get_schedules()
+    assert rows.empty or len(rows) == len(slots)
+
+
+def test_nested_writes_share_one_connection(core, people):
+    """save_schedule() logs a change while holding a connection. If that took a
+    second one from the pool, concurrent saves would deadlock."""
+    import db
+    slots = core.build_midweek_slots(core.default_midweek_parts())
+    names = dict(zip(core.get_students()["id"], core.get_students()["name"]))
+    with db.get_conn() as outer:
+        with db.get_conn() as inner:
+            assert inner is outer
+    core.save_schedule("2026-10-07", core.MIDWEEK, slots,
+                       {0: (people["Kofi Mensah"], None)}, {}, names)
+    assert "Schedule saved" in set(core.get_log()["action"])
+
+
+def test_writes_from_several_sessions_at_once(core):
+    """Two people editing at the same time is the case SQLite on a shared
+    filesystem handled badly."""
+    import threading
+    errors = []
+
+    def add(n):
+        try:
+            for i in range(10):
+                core.add_student(f"Tester {n}-{i}", "Sister", ["Initial Presentation"])
+        except Exception as exc:                      # pragma: no cover - failure path
+            errors.append(repr(exc))
+
+    threads = [threading.Thread(target=add, args=(n,)) for n in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors
+    df = core.get_students()
+    assert len(df) == 40 and df["id"].is_unique
+
+
+def test_survives_the_database_dropping_connections(core):
+    """Neon suspends its compute when idle and terminates open connections.
+    The pool must notice before handing one out, or the next page load dies
+    with AdminShutdown."""
+    import os
+
+    import psycopg
+
+    core.add_student("Kofi Mensah", "Brother", ["Chairman"])
+    assert len(core.get_students()) == 1
+
+    def kill_backends():
+        dsn = os.environ["MEETING_DSN"]
+        with psycopg.connect(dsn, autocommit=True) as raw:
+            raw.execute("""SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+                            WHERE pid <> pg_backend_pid()
+                              AND datname = current_database()""")
+
+    for n in range(3):
+        kill_backends()
+        core.add_student(f"Person {n}", "Sister", ["Initial Presentation"])
+
+    assert len(core.get_students()) == 4
+    # reads recover too, not just writes
+    kill_backends()
+    assert core.get_setting("nothing", "default") == "default"
+
+    # the exact path that crashed in production: sign-in writes the change log
+    # as the first query after the database has been idle
+    for n in range(3):
+        kill_backends()
+        core.log_change("Signed in", f"Tester {n}")
+    assert len(core.get_log()) >= 3
+
+
+# --------------------------------------------------------------- caches
+# Four caches sit between the app and the database (schema setup, settings,
+# workbook, role dates), each cleared by hand on write. Manual invalidation is
+# where stale-data bugs live, and a stale rotation cache is invisible: Suggest
+# keeps working, it just stops offering whoever has waited longest.
+
+def _count_queries(monkeypatch):
+    """Count database round trips made inside the block."""
+    import db
+    calls = []
+    original = db._Conn.execute
+
+    def spy(self, sql, params=()):
+        calls.append(" ".join(str(sql).split())[:60])
+        return original(self, sql, params)
+
+    monkeypatch.setattr(db._Conn, "execute", spy)
+    return calls
+
+
+def test_settings_cache_serves_repeats_and_clears_on_write(core, monkeypatch):
+    core.set_setting("midweek_day", "Wednesday")
+    assert core.get_setting("midweek_day") == "Wednesday"
+
+    calls = _count_queries(monkeypatch)
+    for _ in range(10):
+        core.get_setting("midweek_day")
+    assert calls == [], "settings should be served from cache, not re-queried"
+
+    core.set_setting("midweek_day", "Thursday")
+    assert core.get_setting("midweek_day") == "Thursday"
+    assert core.get_setting("never_set", "fallback") == "fallback"
+
+
+def test_role_dates_cache_clears_on_every_schedule_write(core, people):
+    """The rotation cache is the dangerous one: if it goes stale the app still
+    works, it just stops rotating fairly."""
+    slots = core.build_midweek_slots(core.default_midweek_parts())
+    names = dict(zip(core.get_students()["id"], core.get_students()["name"]))
+    talk = next(i for i, s in enumerate(slots) if s["role"] == "Treasures Talk")
+
+    assert core.last_role_dates("Treasures Talk") == {}
+
+    core.save_schedule("2026-09-16", core.MIDWEEK, slots,
+                       {talk: (people["Kofi Mensah"], None)}, {}, names)
+    after_save = core.last_role_dates("Treasures Talk")
+    assert after_save == {people["Kofi Mensah"]: "2026-09-16"}
+
+    # a later date replaces the earlier one
+    core.save_schedule("2026-09-23", core.MIDWEEK, slots,
+                       {talk: (people["Kofi Mensah"], None)}, {}, names)
+    assert core.last_role_dates("Treasures Talk")[people["Kofi Mensah"]] == "2026-09-23"
+
+    # undo must roll the rotation back too
+    core.undo_last("2026-09-23", core.MIDWEEK)
+    assert core.last_role_dates("Treasures Talk")[people["Kofi Mensah"]] == "2026-09-16"
+
+    core.delete_schedule("2026-09-16", core.MIDWEEK)
+    assert core.last_role_dates("Treasures Talk") == {}
+
+
+def test_workbook_cache_clears_when_the_workbook_changes(core, english_workbook,
+                                                         monkeypatch):
+    weeks, _, _ = core.parse_brochure(english_workbook)
+    core.save_workbook(core.assign_dates(weeks, date(2026, 9, 14)), "en.pdf")
+    stored, name = core.load_workbook()
+    assert name == "en.pdf" and len(stored) == 2
+
+    calls = _count_queries(monkeypatch)
+    for _ in range(5):
+        core.load_workbook()
+    assert calls == [], "the workbook should be read once per run"
+
+    core.save_workbook({}, "")
+    assert core.load_workbook() == ({}, "")
+
+
+def test_restoring_a_backup_clears_the_caches(core, people):
+    """import_all replaces every table, so anything cached is stale."""
+    slots = core.build_midweek_slots(core.default_midweek_parts())
+    names = dict(zip(core.get_students()["id"], core.get_students()["name"]))
+    talk = next(i for i, s in enumerate(slots) if s["role"] == "Treasures Talk")
+    core.set_setting("congregation", "BEFORE")
+    backup = json.loads(core.backup_bytes())
+
+    core.save_schedule("2026-09-16", core.MIDWEEK, slots,
+                       {talk: (people["Kofi Mensah"], None)}, {}, names)
+    core.set_setting("congregation", "AFTER")
+    assert core.get_setting("congregation") == "AFTER"
+    assert core.last_role_dates("Treasures Talk")
+
+    core.import_all(backup)
+    assert core.get_setting("congregation") == "BEFORE"
+    assert core.last_role_dates("Treasures Talk") == {}
+
+
+def test_restoring_a_backup_clears_the_talk_list_and_workbook(core, english_workbook):
+    """The talk list and the workbook are restored too; their caches used to
+    keep showing what was there before until the app rebooted."""
+    core.save_talk("1", "Before")
+    weeks, _, _ = core.parse_brochure(english_workbook)
+    core.save_workbook(core.assign_dates(weeks, date(2026, 9, 14)), "before.pdf")
+    backup = json.loads(core.backup_bytes())
+
+    core.save_talk("1", "After")
+    core.save_talk("2", "Added later")
+    core.save_workbook({}, "")
+    assert dict(core.get_talks()) == {"1": "After", "2": "Added later"}
+    assert core.load_workbook() == ({}, "")
+
+    core.import_all(backup)
+    assert dict(core.get_talks()) == {"1": "Before"}
+    stored, name = core.load_workbook()
+    assert name == "before.pdf" and len(stored) == 2
+
+
+def test_meeting_details_are_cached_and_follow_every_write(core, monkeypatch):
+    """One query for every meeting's details, not one per meeting; and a save,
+    delete, undo or restore is seen straight away."""
+    slots = core.default_weekend_slots()
+    for n, d in enumerate(("2026-10-03", "2026-10-10", "2026-10-17")):
+        core.save_schedule(d, core.WEEKEND, slots, {},
+                           {"talk_number": str(n + 1), "talk_title": f"T{n}"}, {})
+    backup = json.loads(core.backup_bytes())
+    core.get_meeting_meta("2026-10-03", core.WEEKEND)
+
+    calls = _count_queries(monkeypatch)
+    for d in ("2026-10-03", "2026-10-10", "2026-10-17", "2026-10-24"):
+        core.get_meeting_meta(d, core.WEEKEND)
+    assert calls == [], "meeting details should come from the cache"
+
+    assert core.get_meeting_meta("2026-10-24", core.WEEKEND)["talk_number"] == ""
+    assert core.get_meeting_meta("2026-10-24", core.WEEKEND)["aux"] is None
+
+    core.save_schedule("2026-10-10", core.WEEKEND, slots, {},
+                       {"talk_number": "99", "talk_title": "Changed"}, {})
+    assert core.get_meeting_meta("2026-10-10", core.WEEKEND)["talk_title"] == "Changed"
+    core.undo_last("2026-10-10", core.WEEKEND)
+    assert core.get_meeting_meta("2026-10-10", core.WEEKEND)["talk_title"] == "T1"
+    core.delete_schedule("2026-10-17", core.WEEKEND)
+    assert core.get_meeting_meta("2026-10-17", core.WEEKEND)["talk_number"] == ""
+    core.import_all(backup)
+    assert core.get_meeting_meta("2026-10-17", core.WEEKEND)["talk_number"] == "3"
+
+    # a caller changing the dict it was given must not change the cache
+    core.get_meeting_meta("2026-10-03", core.WEEKEND)["talk_title"] = "scribbled"
+    assert core.get_meeting_meta("2026-10-03", core.WEEKEND)["talk_title"] == "T0"
+
+
+def test_undo_names_who_saved_not_the_database_login(core, people, monkeypatch):
+    import streamlit as st
+    monkeypatch.setitem(st.session_state, "user_name", "Ama")
+    slots = core.build_midweek_slots(core.default_midweek_parts())
+    core.save_schedule("2026-09-16", core.MIDWEEK, slots, {}, {}, {})
+    assert core.last_snapshot("2026-09-16", core.MIDWEEK)["user"] == "Ama"
+
+
+def test_passwords_with_ga_letters_or_curly_quotes_do_not_crash(core):
+    from auth import _matches
+    assert _matches("kpɔɔ’ɛ", "kpɔɔ’ɛ")
+    assert not _matches("kpɔɔ’ɛ", "plain")
+    assert not _matches("plain", "kpɔɔ’ɛ")
+    assert _matches("café", "café")            # composed either way
+    assert not _matches("secret ", "secret")              # spaces still count
+    assert not _matches("anything", None)
+
+
+def test_backup_reminder_tracks_the_last_backup(core, people):
+    """The backup file is the only second copy now, and taking one is a button
+    somebody has to remember to press."""
+    from datetime import date, timedelta
+
+    overdue, days = core.backup_overdue()
+    assert overdue and days is None                # never taken
+
+    core.backup_bytes()                            # downloading one records it
+    overdue, days = core.backup_overdue()
+    assert not overdue and days == 0
+
+    core.set_setting("last_export", (date.today() - timedelta(days=13)).isoformat())
+    assert core.backup_overdue() == (False, 13)
+    core.set_setting("last_export", (date.today() - timedelta(days=14)).isoformat())
+    assert core.backup_overdue() == (True, 14)
+
+    core.set_setting("last_export", "not a date")
+    assert core.backup_overdue()[0]                # unreadable means remind
+
+def test_migrations_run_again_when_the_schema_changes(core, monkeypatch):
+    """Streamlit reruns the script on a code push without restarting the
+    process, so a schema cache keyed only on the database name survives the
+    deploy and the new migration never runs. This is the failure that shipped:
+    the app queried a column it had never added."""
+    import db
+
+    db.ensure_db()
+    first = db.schema_fingerprint()
+
+    # a column added by a later version, as it would look before that deploy
+    with db.get_conn() as conn:
+        conn.execute("ALTER TABLE meetings DROP COLUMN IF EXISTS aux_group")
+    with db.get_conn() as conn:
+        cols = db.table_columns(conn, "meetings")
+    assert "aux_group" not in cols
+
+    # same code: the cache legitimately skips the work
+    db.ensure_db()
+    with db.get_conn() as conn:
+        assert "aux_group" not in db.table_columns(conn, "meetings")
+
+    # code changed: the fingerprint moves and the migration runs again
+    monkeypatch.setattr(db, "schema_fingerprint", lambda: first + "-changed")
+    db.ensure_db()
+    with db.get_conn() as conn:
+        assert "aux_group" in db.table_columns(conn, "meetings")
+
+    assert core.get_meeting_meta("2026-09-16", core.MIDWEEK)["aux_group"] == ""
+
+
+def test_the_same_part_is_not_given_two_meetings_running(core, people):
+    """A chairman this week gets something else next week — unless nobody else
+    qualifies, when filling the part beats leaving it empty."""
+    from datetime import date, timedelta
+
+    slots = core.build_midweek_slots(core.default_midweek_parts())
+    names = dict(zip(core.get_students()["id"], core.get_students()["name"]))
+    chairman = next(i for i, s in enumerate(slots) if s["role"] == "Chairman")
+    last_week = (date.today() - timedelta(days=7)).isoformat()
+    today = date.today().isoformat()
+
+    core.save_schedule(last_week, core.MIDWEEK, slots,
+                       {chairman: (people["Kofi Mensah"], None)}, {}, names)
+    students = core.get_students()
+
+    role_dates = core.last_role_dates("Chairman")
+    assert core.held_recently(role_dates, people["Kofi Mensah"], today)
+    assert not core.held_recently(role_dates, people["Nii Tetteh"], today)
+
+    picks = core.suggest_assignments(slots, students, set(), today)
+    assert picks[chairman][0] != people["Kofi Mensah"]
+    assert picks[chairman][0] == people["Nii Tetteh"]      # the other chairman
+
+    # with nobody else qualified, the part is filled rather than left empty
+    core.set_suspension(people["Nii Tetteh"], True)
+    students = core.get_students()
+    picks = core.suggest_assignments(
+        slots, students, core.get_suspended(students, today), today)
+    assert picks[chairman][0] == people["Kofi Mensah"]
+
+
+def test_same_role_gap_is_a_setting_not_a_constant(core, people):
+    """Admin → Settings can shorten or lengthen the rest period without a
+    code change; held_recently() picks up the new value immediately."""
+    from datetime import date, timedelta
+
+    three_days_ago = (date.today() - timedelta(days=3)).isoformat()
+    today = date.today().isoformat()
+    role_dates = {people["Kofi Mensah"]: three_days_ago}
+
+    assert core.same_role_gap_days() == 10          # the built-in default
+    assert core.held_recently(role_dates, people["Kofi Mensah"], today)
+
+    core.set_setting("same_role_gap_days", "2")       # shorten it to 2 days
+    assert core.same_role_gap_days() == 2
+    assert not core.held_recently(role_dates, people["Kofi Mensah"], today)
+
+    core.set_setting("same_role_gap_days", "not-a-number")   # guarded
+    assert core.same_role_gap_days() == 10
+
+
+def test_suggest_keeps_what_is_already_chosen(core, people):
+    """Suggest used to compute a pick for every slot and override whatever was
+    there — five parts done by hand were silently replaced."""
+    slots = core.build_midweek_slots(core.default_midweek_parts())
+    today = date.today().isoformat()
+    students = core.get_students()
+    chairman = next(i for i, s in enumerate(slots) if s["role"] == "Chairman")
+    reading = next(i for i, s in enumerate(slots) if s["role"] == "Bible Reading")
+
+    picks = core.suggest_assignments(
+        slots, students, set(), today,
+        skip={chairman: (people["Nii Tetteh"], None)})
+    assert picks[chairman] is None            # left alone, not overwritten
+    assert picks[reading][0] is not None      # the empty one was filled
+
+    # and the reserved person is not handed a second part
+    chosen = [p for i, v in picks.items() if v for p in v if p]
+    assert people["Nii Tetteh"] not in chosen
+
+
+def test_hardest_slots_are_filled_first(core):
+    """Taken in page order, an early slot with many candidates can take the one
+    person qualified for a later one and leave that part empty."""
+    # Kofi can chair or conduct; Yaw can only chair
+    core.add_student("Kofi Mensah", "Brother", ["Chairman", "Bible Study Conductor"])
+    core.add_student("Yaw Adjei", "Brother", ["Chairman"])
+    students = core.get_students()
+    ids = dict(zip(students["name"], students["id"]))
+    slots = core.build_midweek_slots(core.default_midweek_parts())
+    chairman = next(i for i, s in enumerate(slots) if s["role"] == "Chairman")
+    cbs = next(i for i, s in enumerate(slots) if s["role"] == "Bible Study Conductor")
+
+    picks = core.suggest_assignments(slots, students, set(), date.today().isoformat())
+    assert picks[cbs][0] == ids["Kofi Mensah"]      # the only conductor
+    assert picks[chairman][0] == ids["Yaw Adjei"]   # so the chair goes to Yaw
+
+
+def test_ministry_parts_count_as_one_for_taking_turns(core, people):
+    """Initial Presentation, Making Disciples and Explaining Your Beliefs are
+    separate roles, so a same-part rule let one person take all three on
+    consecutive weeks."""
+    from datetime import timedelta
+
+    slots = core.build_midweek_slots(core.default_midweek_parts())
+    names = dict(zip(core.get_students()["id"], core.get_students()["name"]))
+    ip = next(i for i, s in enumerate(slots) if s["role"] == "Initial Presentation")
+    last_week = (date.today() - timedelta(days=7)).isoformat()
+    core.save_schedule(last_week, core.MIDWEEK, slots,
+                       {ip: (people["Ama Owusu"], None)}, {}, names)
+
+    recent = core.last_student_part_dates()
+    assert people["Ama Owusu"] in recent
+
+    md = next(i for i, s in enumerate(slots) if s["role"] == "Making Disciples")
+    picks = core.suggest_assignments(slots, core.get_students(), set(),
+                                     date.today().isoformat())
+    # a different ministry part the very next week goes to somebody else
+    assert picks[md][0] != people["Ama Owusu"]
+
+
+def test_talks_can_be_stored_and_edited(core):
+    """Talk numbers and titles are kept so a weekend schedule picks one."""
+    assert core.get_talks() == []
+    core.save_talk("2", "Namɔ Ji Yehowa?")
+    core.save_talk("10", "Yehowa Ji Wɔhewalɛ")
+    core.save_talk("1", "")
+    # numeric order, not alphabetical: 1, 2, 10
+    assert [n for n, _ in core.get_talks()] == ["1", "2", "10"]
+    assert core.talk_label("2", "Namɔ Ji Yehowa?") == "No. 2 — Namɔ Ji Yehowa?"
+    assert core.talk_label("1", "") == "No. 1"
+
+    core.save_talk("2", "A better title")          # editing replaces
+    assert dict(core.get_talks())["2"] == "A better title"
+    core.delete_talk("2")
+    assert "2" not in dict(core.get_talks())
+
+
+def test_recency_is_measured_from_the_meeting_not_today(core):
+    """Working on week 2 of October, "last week" means week 1 of October
+    however long afterwards you open it."""
+    meeting = "2026-10-14"
+    # one threshold: on in the last week means resting, otherwise available.
+    # The words still carry the exact distance.
+    assert core.recency("2026-10-12", meeting) == ("🔴", "this week")
+    assert core.recency("2026-10-07", meeting) == ("🔴", "last week")
+    assert core.recency("2026-09-30", meeting) == ("🟢", "2 weeks ago")
+    assert core.recency("2026-09-23", meeting) == ("🟢", "3 weeks ago")
+    assert core.recency("2026-09-16", meeting) == ("🟢", "4 weeks ago")
+    assert core.recency("2026-08-12", meeting)[0] == "🟢"
+    assert core.recency(None, meeting) == core.NEVER_BAND
+    # never had a part gets its own marker — green means "rested", not "new"
+    assert core.NEVER_BAND[0] == "⭐"
+    # the same date reads differently against a later meeting
+    assert core.recency("2026-10-07", "2026-11-11")[0] == "🟢"
+    # already assigned to something after this meeting is a conflict, not a
+    # rotation cooldown, so it gets its own colour rather than sharing red
+    assert core.recency("2026-10-18", meeting) == (
+        "🟠", "already scheduled later this week (18 Oct)")
+    assert core.recency("2026-10-21", meeting) == (
+        "🟠", "already scheduled next week (21 Oct)")
+    assert core.recency("2026-11-04", meeting) == (
+        "🟠", "already scheduled in 3 weeks (4 Nov)")
+
+
+def test_setup_checklist_clears_as_things_are_done(core, people):
+    import dashboard
+
+    students = core.get_students()
+    gaps = [what for what, _ in dashboard.setup_gaps(students)]
+    assert any("congregation name" in g for g in gaps)
+    assert any("S-89" in g for g in gaps)
+    assert any("workbook" in g for g in gaps)
+
+    core.set_setting("congregation", "Teshie Asafo")
+    gaps = [what for what, _ in dashboard.setup_gaps(students)]
+    assert not any("congregation name" in g for g in gaps)
+    assert any("S-89" in g for g in gaps)             # the rest remain
+
+
+def test_talks_import_in_bulk(core):
+    """Two hundred outlines arrive as a list, not typed a row at a time."""
+    rows = [(str(n), f"Title {n}") for n in range(1, 195)]
+    total, added = core.import_talks(rows)
+    assert (total, added) == (194, 194)
+    assert len(core.get_talks()) == 194
+    assert [n for n, _ in core.get_talks()][:3] == ["1", "2", "3"]
+
+    # re-importing the same numbers corrects titles in place
+    total, added = core.import_talks([("52", "A better title")])
+    assert (total, added) == (1, 0)
+    assert dict(core.get_talks())["52"] == "A better title"
+    assert len(core.get_talks()) == 194
+
+    # blank and duplicate numbers are dropped rather than stored
+    total, _ = core.import_talks([("", "no number"), ("7", "x"), ("7", "again")])
+    assert total == 1
+    assert dict(core.get_talks())["7"] == "x"
+
+    # replacing swaps the whole list
+    total, _ = core.import_talks([("1", "Only one")], replace=True)
+    assert total == 1 and len(core.get_talks()) == 1
+
+
+def test_talk_matrix_shows_one_row_per_talk_by_year(core, people):
+    """One row per talk number; a year with nothing given prints blank rather
+    than being hidden — that's what flags a talk as overdue. Nothing is ever
+    removed from the database, so a wider window still finds the older talk."""
+    from datetime import date, timedelta
+
+    slots = core.default_weekend_slots()
+    names = dict(zip(core.get_students()["id"], core.get_students()["name"]))
+    recent = date.today().isoformat()
+    old_date = date.today() - timedelta(days=400)   # always at least a year back
+    old = old_date.isoformat()
+
+    core.save_schedule(recent, core.WEEKEND, slots, {2 + 10000: "Guest Speaker"},
+                       {"talk_number": "1", "talk_title": "Recent Talk"}, names)
+    core.save_schedule(old, core.WEEKEND, slots, {2 + 10000: "Old Guest"},
+                       {"talk_number": "2", "talk_title": "Old Talk"}, names)
+
+    schedules_df = core.get_schedules()
+    years = sorted({date.today().year, old_date.year})
+    rows = core.talk_matrix_rows(schedules_df, years)
+    by_number = {r["number"]: r for r in rows}
+
+    assert by_number["1"]["years"].get(date.today().year)
+    assert not by_number["1"]["years"].get(old_date.year)
+    assert by_number["2"]["years"].get(old_date.year)
+    assert not by_number["2"]["years"].get(date.today().year)
+    # the old talk is still in the database — the matrix just windows by year
+    assert old in schedules_df["meeting_date"].values
+
+
+def test_the_watchtower_conductor_is_gone_and_old_data_is_cleared(core, people):
+    """No longer a privilege, a role or a weekend part. Assignments and
+    privileges saved before it was removed are cleared at start-up (and so
+    after a restore), and undo never puts one back."""
+    import db
+
+    assert "Watchtower Conductor" not in core.PRIVILEGES
+    assert "Watchtower Conductor" not in core.ROLES
+    assert [s["role"] for s in core.default_weekend_slots()] == [
+        "Weekend Chairman", "Prayer", "Public Talk", "Watchtower Reader"]
+
+    # data as an older version of the app left it
+    with db.get_conn() as conn:
+        conn.execute("UPDATE students SET privileges = ? WHERE id = ?",
+                     ("Public Talk, Watchtower Conductor, Bible Reading",
+                      people["Nii Tetteh"]))
+        conn.execute("""INSERT INTO schedules (meeting_date, meeting_type, part_name,
+                            section, role, student_id, sort_order, hall)
+                        VALUES ('2026-09-27', ?, 'Watchtower Conductor', 'Weekend',
+                                'Watchtower Conductor', ?, 3, 'main_hall')""",
+                     (core.WEEKEND, people["Nii Tetteh"]))
+    core.init_db()
+    db._forget_schedules(); db._forget_students()
+    assert not (core.get_schedules()["role"] == "Watchtower Conductor").any()
+    with db.get_conn() as conn:
+        stored = conn.execute("SELECT privileges FROM students WHERE id = ?",
+                              (people["Nii Tetteh"],)).fetchone()[0]
+    assert stored == "Public Talk, Bible Reading"
+
+    # an undo snapshot taken while the conductor was still scheduled
+    import json
+    names = dict(zip(core.get_students()["id"], core.get_students()["name"]))
+    core.save_schedule("2026-10-04", core.WEEKEND, core.default_weekend_slots(),
+                       {0: (people["Yaw Adjei"], None)}, {}, names)
+    with db.get_conn() as conn:
+        snap_id, data = conn.execute(
+            "SELECT id, data FROM snapshots ORDER BY id DESC LIMIT 1").fetchone()
+        data = json.loads(data)
+        data["schedules"] = [{"meeting_date": "2026-10-04", "meeting_type": core.WEEKEND,
+                              "part_name": "Watchtower Conductor", "section": "Weekend",
+                              "role": "Watchtower Conductor", "sort_order": 3,
+                              "student_id": people["Nii Tetteh"], "hall": "main_hall"}]
+        conn.execute("UPDATE snapshots SET data = ? WHERE id = ?",
+                     (json.dumps(data), snap_id))
+    assert core.undo_last("2026-10-04", core.WEEKEND) == 0
+    assert not (core.get_schedules()["role"] == "Watchtower Conductor").any()
+
+
+def test_month_whatsapp_text_lists_parts_and_assisting(core):
+    """One message per person per month: their own parts and the ones they
+    assist on, grouped by meeting, other months and other people left out."""
+    import pandas as pd
+    cols = ["meeting_date", "meeting_type", "part_no", "part_name", "minutes",
+            "role", "student_id", "assistant_id", "sort_order", "hall",
+            "person", "assistant"]
+    df = pd.DataFrame([
+        ("2026-10-07", core.MIDWEEK, None, "Chairman", None, "Chairman",
+         1, None, 0, "main_hall", "Kofi Mensah", None),
+        ("2026-10-07", core.MIDWEEK, 5, "Making Disciples", 4, "Making Disciples",
+         2, 1, 5, "aux_1", "Ama Owusu", "Kofi Mensah"),
+        ("2026-10-14", core.MIDWEEK, 3, "Bible Reading", 4, "Bible Reading",
+         3, None, 3, "main_hall", "Kojo Mensah", None),       # someone else
+        ("2026-11-04", core.MIDWEEK, None, "Chairman", None, "Chairman",
+         1, None, 0, "main_hall", "Kofi Mensah", None),        # next month
+    ], columns=cols)
+    items = core.month_assignments_for(df, 1, "2026-10")
+    assert [i["part"] for i in items] == ["Chairman", "5. Making Disciples (4 min)"]
+    text = core.whatsapp_month_text("Kofi Mensah", "Brother", "2026-10", items)
+    assert text.startswith("Hello Brother Kofi Mensah!")
+    assert "*October 2026*" in text
+    assert "\n*Wednesday 7 October* · Midweek meeting\n" in text
+    assert text.count("Midweek meeting") == 1          # one heading per meeting
+    assert "📅" not in text
+    assert "Auxiliary classroom 1 — assisting Ama Owusu" in text
+    assert "Bible Reading" not in text and "November" not in text
+    assert "2 assignments" in text
+
+    empty = core.whatsapp_month_text("Esi Mensah", "Sister", "2026-10", [])
+    assert empty.startswith("Hello Sister Esi Mensah!") and "no meeting" in empty
+
+
+def test_save_converts_numbers_that_arrive_as_text(core, people):
+    """Postgres refuses text in a number column and Streamlit hides which
+    value it was. Numbers-as-text are saved as numbers; anything else is
+    refused with the part named, before the database sees it."""
+    names = dict(zip(core.get_students()["id"], core.get_students()["name"]))
+    kofi = people["Kofi Mensah"]
+    slots = core.build_midweek_slots(core.default_midweek_parts())
+    tt = next(i for i, s in enumerate(slots) if s["role"] == "Treasures Talk")
+    slots[tt] = {**slots[tt], "part_no": "1", "minutes": "10.0"}
+    core.save_schedule("2026-10-07", core.MIDWEEK, slots,
+                       {0: (str(kofi), None), tt: (float(kofi), None)}, {}, names)
+    rows = core.get_schedules()
+    rows = rows[rows["meeting_date"] == "2026-10-07"].sort_values("sort_order")
+    assert rows.iloc[0]["person"] == "Kofi Mensah"
+    assert int(rows.iloc[tt]["part_no"]) == 1 and int(rows.iloc[tt]["minutes"]) == 10
+
+    slots[tt] = {**slots[tt], "minutes": "ten"}
+    import pytest
+    with pytest.raises(ValueError, match="Treasures Talk.*minutes.*'ten'"):
+        core.save_schedule("2026-10-14", core.MIDWEEK, slots, {}, {}, names)
+    assert core.get_schedules()["meeting_date"].eq("2026-10-14").sum() == 0
+
+
+def test_fill_progress_never_counts_past_the_parts(core):
+    """A visiting speaker's congregation belongs to his name; counting it as
+    a part of its own made the progress bar run past 100% and crash."""
+    slots = core.default_weekend_slots()
+    talk = next(i for i, s in enumerate(slots) if s["role"] == "Public Talk")
+    picks = {i: (100 + i, None) for i in range(len(slots))}
+    picks[talk] = (None, None)
+    picks[talk + 10000] = "Jonathan Adjei"
+    picks[talk + 20000] = "Dansoman Beach Ga"
+    assert core.fill_progress(slots, picks) == (len(slots), len(slots))
+
+    picks[talk + 10000] = ""                       # name cleared: open again
+    assert core.fill_progress(slots, picks) == (len(slots) - 1, len(slots))
+
+    mid = core.build_midweek_slots(core.default_midweek_parts())
+    done, needed = core.fill_progress(mid, {})
+    assert done == 0 and needed == len(mid) + sum(s["needs_assistant"] for s in mid)
+
+
+
+# ------------------------------------------------- week context and conflicts
+def _chairman(core, people, day, who):
+    """Save a midweek meeting on `day` with `who` as chairman."""
+    names = dict(zip(core.get_students()["id"], core.get_students()["name"]))
+    slots = core.build_midweek_slots(core.default_midweek_parts())
+    core.save_schedule(day, core.MIDWEEK, slots, {0: (people[who], None)}, {}, names)
+    return slots
+
+
+def test_weeks_are_calendar_weeks_with_fixed_names(core):
+    """Monday to Sunday, as the workbook prints them — not "within 7 days"."""
+    assert core.week_label("2026-10-07") == "Week 1 of October (5–11 Oct)"
+    assert core.week_label("2026-10-21") == "Week 3 of October (19–25 Oct)"
+    assert core.week_label("2026-10-01") == "Week 4 of September (28 Sep – 4 Oct)"
+    meeting = "2026-10-14"                                  # Wednesday, Week 2
+    assert core.relative_week("2026-10-11", meeting) == "last week"   # the Sunday before
+    assert core.relative_week("2026-10-18", meeting) == "this week"   # the Sunday after
+    assert core.relative_week("2026-10-21", meeting) == "next week"
+    assert core.relative_week("2026-09-30", meeting) == "2 weeks ago"
+    # 3 days apart but in different weeks: last week, not "this week"
+    assert core.recency("2026-10-11", meeting) == ("🔴", "last week")
+
+
+def test_lookups_are_relative_to_the_meeting_being_edited(core, people):
+    """Editing Week 3 with Weeks 2 and 4 saved: "last time" is Week 2 and
+    "next time" Week 4 — a later week never hides an earlier one, and a
+    meeting is never its own neighbour."""
+    kofi = people["Kofi Mensah"]
+    _chairman(core, people, "2026-10-14", "Kofi Mensah")    # Week 2
+    _chairman(core, people, "2026-10-28", "Kofi Mensah")    # Week 4
+    assert core.last_role_dates("Chairman", "2026-10-21")[kofi] == "2026-10-14"
+    assert core.next_role_dates("Chairman", "2026-10-21")[kofi] == "2026-10-28"
+    # Week 4 looking back skips itself and finds Week 2
+    assert core.last_role_dates("Chairman", "2026-10-28")[kofi] == "2026-10-14"
+    assert kofi not in core.next_role_dates("Chairman", "2026-10-28")
+    # no meeting given: the latest overall, as the participants list wants
+    assert core.last_role_dates("Chairman")[kofi] == "2026-10-28"
+    assert core.last_assignment_dates(exclude_date="")[kofi] == "2026-10-28"
+    assert core.last_assignment_dates("2026-10-21")[kofi] == "2026-10-14"
+    assert core.next_assignment_details("2026-10-21")[kofi] == ("2026-10-28", "Chairman")
+
+
+def test_saving_again_unchanged_flags_nothing(core, people):
+    """The bug: reopen a saved week and save it unchanged, and everyone on it
+    was flagged — the meeting's own saved copy counted as "last time"."""
+    slots = _chairman(core, people, "2026-10-14", "Kofi Mensah")
+    _, saved_picks, _, _ = core.load_schedule("2026-10-14", core.MIDWEEK,
+                                              core.get_schedules())
+    picks = {i: saved_picks.get(core.slot_match_key(s), (None, None))
+             for i, s in enumerate(slots)}
+    assert picks[0][0] == people["Kofi Mensah"]
+    issues = core.assignment_issues(slots, picks, core.get_students(),
+                                    "2026-10-14", core.MIDWEEK)
+    assert issues == []
+
+
+def test_rest_period_counts_both_neighbouring_weeks(core, people):
+    """Filling Week 3 must respect Week 4 as much as Week 2."""
+    kofi = people["Kofi Mensah"]
+    _chairman(core, people, "2026-10-14", "Kofi Mensah")    # Week 2
+    _chairman(core, people, "2026-10-28", "Kofi Mensah")    # Week 4
+    slots = core.build_midweek_slots(core.default_midweek_parts())
+    texts = [x["text"] for x in core.assignment_issues(
+        slots, {0: (kofi, None)}, core.get_students(), "2026-10-21", core.MIDWEEK)]
+    assert any("had 'Chairman' last week (14 Oct)" in t for t in texts)
+    assert any("already has 'Chairman' next week (28 Oct)" in t for t in texts)
+
+    # and Suggest gives Week 3's chairman to someone else who qualifies
+    picks = core.suggest_assignments(slots, core.get_students(), set(), "2026-10-21")
+    assert picks[0][0] not in (None, kofi)
+
+
+def test_duplicates_in_one_meeting_are_flagged_on_every_part(core, people):
+    kofi = people["Kofi Mensah"]
+    slots = core.build_midweek_slots(core.default_midweek_parts())
+    prayer = next(i for i, s in enumerate(slots) if s["title"] == "Opening Prayer")
+    issues = core.assignment_issues(slots, {0: (kofi, None), prayer: (kofi, None)},
+                                    core.get_students(), "2026-10-21", core.MIDWEEK)
+    double = [x for x in issues if "has 2 parts in this meeting" in x["text"]]
+    assert len(double) == 1 and double[0]["slots"] == [0, prayer]
+    assert double[0]["level"] == "warning"
+
+    ministry = next(i for i, s in enumerate(slots) if s["needs_assistant"])
+    esi = people["Esi Mensah"]
+    errors = [x for x in core.assignment_issues(
+        slots, {ministry: (esi, esi)}, core.get_students(), "2026-10-21",
+        core.MIDWEEK) if x["level"] == "error"]
+    assert errors and "both student and assistant" in errors[0]["text"]
+
+
+def test_a_label_handed_back_as_text_is_turned_back_into_the_person(core, people):
+    """The exact text from the reported error resolves to the person; text
+    that can't be matched for sure gives None, never the text itself."""
+    core.add_student("Theophilus Quarcoo", "Brother", ["Student Talk"])
+    students = core.get_students()
+    theo = int(students.set_index("name").at["Theophilus Quarcoo", "id"])
+    ids = students["id"].tolist()
+    stale = ("🟠 Theophilus Quarcoo — 4 weeks ago, Bible Reading · also on "
+             "Kɛ́ Oyaaje Sanegbaa Shishi")
+    assert core.recover_person(stale, ids, students) == theo
+    assert core.recover_person("⭐ Kojo Mensah — no parts yet · child", ids,
+                               students) == people["Kojo Mensah"]
+    assert core.recover_person("Nii Tetteh · away", ids, students) == people["Nii Tetteh"]
+    assert core.recover_person("🟢 Nobody Here — 2 weeks ago", ids, students) is None
+    assert core.recover_person(people["Kofi Mensah"], ids, students) == people["Kofi Mensah"]
+    assert core.recover_person(None, ids, students) is None
+
+    core.add_student("Kofi Mensah", "Brother", ["Prayer"])      # a second Kofi
+    students = core.get_students()
+    assert core.recover_person("🔴 Kofi Mensah — last week", students["id"].tolist(),
+                               students) is None                 # not sure: no guess
+
+
+
+# ------------------------------------------------ assembly and convention weeks
+def test_the_labels_in_each_language_are_exactly_as_given(core):
+    assert core.event_text("assembly") == "Assembly Week"
+    assert core.event_text("convention") == "Convention Week"
+    assert core.event_text("assembly", "Ga") == "Kpokpaa Nɔ Kpee Otsi"
+    assert core.event_text("convention", "Ga") == "Kpokpaa wulu Nɔ Kpee Otsi"
+    for kind in core.EVENT_KINDS:                 # never the two run together
+        assert "=" not in core.event_text(kind) + core.event_text(kind, "Ga")
+
+
+def test_marking_a_week_clears_its_meetings_and_labels_it(core, people):
+    """Any day marks the whole Monday–Sunday week; both of its meetings are
+    cleared (and can be undone once the mark is removed); the weeks either
+    side are untouched."""
+    names = dict(zip(core.get_students()["id"], core.get_students()["name"]))
+    mid = core.build_midweek_slots(core.default_midweek_parts())
+    wk = core.default_weekend_slots()
+    for day, kind, slots in (("2026-10-14", core.MIDWEEK, mid),
+                             ("2026-10-18", core.WEEKEND, wk),
+                             ("2026-10-11", core.WEEKEND, wk),     # the week before
+                             ("2026-10-21", core.MIDWEEK, mid)):   # the week after
+        core.save_schedule(day, kind, slots, {0: (people["Kofi Mensah"], None)},
+                           {}, names)
+
+    cleared = core.mark_event_week("2026-10-16", "assembly")       # a Friday
+    assert cleared == [("2026-10-14", core.MIDWEEK), ("2026-10-18", core.WEEKEND)]
+    left = sorted(set(core.get_schedules()["meeting_date"]))
+    assert left == ["2026-10-11", "2026-10-21"]
+
+    for day in ("2026-10-12", "2026-10-14", "2026-10-18"):
+        assert core.event_for(day) == "assembly"
+        assert core.event_label(day) == "Assembly Week"
+        assert core.event_label(day, "Ga") == "Kpokpaa Nɔ Kpee Otsi"
+    assert core.event_for("2026-10-11") is None and core.event_for("2026-10-19") is None
+    assert core.event_weeks() == {"2026-10-12": "assembly"}
+    assert core.is_no_meeting("2026-10-14")
+
+    # marking the same week again replaces the record rather than adding one
+    core.mark_event_week("2026-10-13", "convention")
+    assert core.event_weeks() == {"2026-10-12": "convention"}
+    assert core.event_label("2026-10-18") == "Convention Week"
+    assert core.event_label("2026-10-18", "Ga") == "Kpokpaa wulu Nɔ Kpee Otsi"
+    assert len(core.get_no_meeting_periods()) == 1
+
+    # remove the mark, and a cleared meeting can be brought back with undo
+    pid = core.get_no_meeting_periods()[0][0]
+    core.delete_no_meeting_period(pid)
+    assert core.event_for("2026-10-14") is None
+    assert core.undo_last("2026-10-14", core.MIDWEEK) > 0
+    assert "2026-10-14" in set(core.get_schedules()["meeting_date"])
+
+
+def test_weeks_recorded_before_kinds_existed_get_one(core):
+    """Older records only had a note: "convention" in it makes a convention,
+    anything else an assembly."""
+    import db
+    with db.get_conn() as conn:
+        conn.execute("""INSERT INTO no_meeting_periods (start_date, end_date, note)
+                        VALUES ('2026-07-06', '2026-07-12', 'Regional Convention'),
+                               ('2026-03-02', '2026-03-08', 'Circuit Assembly'),
+                               ('2026-05-04', '2026-05-10', '')""")
+    core.init_db()
+    db._forget_no_meeting()
+    assert core.event_for("2026-07-08") == "convention"
+    assert core.event_for("2026-03-04") == "assembly"
+    assert core.event_for("2026-05-06") == "assembly"

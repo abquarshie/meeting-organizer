@@ -14,9 +14,9 @@ _ORIGINAL_POOL = db._pool
 import importlib.util  # noqa: E402
 from pathlib import Path  # noqa: E402
 
-# loaded by path: "py" is also the name of an installed package
+# loaded by path: "index" is too generic a name to import from tests
 _spec = importlib.util.spec_from_file_location(
-    "api_py", Path(__file__).resolve().parent.parent / "api" / "py.py")
+    "api_py", Path(__file__).resolve().parent.parent / "api" / "index.py")
 api = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(api)   # replaces db._pool with one connection per request
 
@@ -141,3 +141,21 @@ def test_an_assembly_week_and_the_app_language(call, core):
     core.set_setting("app_language", "ada")
     status, _, out, _ = call("nothing_here", "POST", {})
     assert status == 404 and out["error"]
+
+
+def test_the_wsgi_app_answers_like_the_handler(call, people):
+    import io
+    from wsgiref.util import setup_testing_defaults
+
+    environ = {"REQUEST_METHOD": "GET", "PATH_INFO": "/api/py", "QUERY_STRING": "op=ping",
+               "HTTP_COOKIE": _cookie(), "wsgi.input": io.BytesIO(b"")}
+    setup_testing_defaults(environ)
+    seen = {}
+    body = b"".join(api.app(environ, lambda status, headers: seen.update(status=status, headers=dict(headers))))
+    assert seen["status"] == "200 OK" and json.loads(body)["ok"]
+
+    environ = {"REQUEST_METHOD": "POST", "PATH_INFO": "/api/py", "QUERY_STRING": "op=editor",
+               "HTTP_COOKIE": _cookie(), "CONTENT_LENGTH": "22", "wsgi.input": io.BytesIO(b'{"date": "2026-11-04"}')}
+    setup_testing_defaults(environ)
+    body = b"".join(api.app(environ, lambda status, headers: seen.update(status=status)))
+    assert seen["status"] == "200 OK" and json.loads(body)["slots"]

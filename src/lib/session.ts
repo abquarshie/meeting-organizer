@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 // The sign-in cookie: base64url(JSON {e: expiry}) + "." + base64url(HMAC-SHA256 of that, SESSION_SECRET).
-// api/py.py checks the same cookie with the same secret (signed_in), so keep the two in step.
+// api/index.py checks the same cookie with the same secret (signed_in), so keep the two in step.
 export const COOKIE = "mo_session";
 export const SESSION_DAYS = 30;
 

@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { parse, TYPE } from "@formatjs/icu-messageformat-parser";
 
-const read = (f) => JSON.parse(readFileSync(new URL(`../messages/${f}.json`, import.meta.url), "utf8"));
+const read = (f) => JSON.parse(readFileSync(new URL(`../api/messages/${f}.json`, import.meta.url), "utf8"));
 const flat = (o, p = "", out = {}) => {
   for (const [k, v] of Object.entries(o)) {
     const q = p ? `${p}.${k}` : k;

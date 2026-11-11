@@ -1,10 +1,28 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "api/py.py": {
-      "maxDuration": 60,
-      "includeFiles": "{pyapp/**,messages/**,db/schema.sql}",
-      "excludeFiles": "{node_modules/**,.next/**,src/**,public/**,prisma/**,tests/**,docs/**,tools/**,**/__pycache__/**,*.md}"
+  "services": {
+    "app": {
+      "root": ".",
+      "framework": "nextjs"
+    },
+    "api": {
+      "root": "api",
+      "runtime": "python",
+      "entrypoint": "index:app"
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "app"
+      }
+    }
+  ]
 }

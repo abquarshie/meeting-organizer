@@ -4,9 +4,9 @@
     python3 tools/translations.py export dangme-translations.xlsx
     python3 tools/translations.py import dangme-translations.xlsx
 
-export writes one tab per screen (from messages/notes.json) with Key / English / Dangme / Notes, plus two tabs holding
+export writes one tab per screen (from api/messages/notes.json) with Key / English / Dangme / Notes, plus two tabs holding
 this repository's guides (README.md and docs/setup.en.md), a paragraph per row. import writes the Dangme column into
-messages/ada.json and builds README.ada.md and docs/setup.ada.md, with any paragraph not yet translated left in
+api/messages/ada.json and builds README.ada.md and docs/setup.ada.md, with any paragraph not yet translated left in
 English. Needs openpyxl (pip install openpyxl).
 """
 import json
@@ -16,7 +16,7 @@ import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MESSAGES = ROOT / "messages"
+MESSAGES = ROOT / "api" / "messages"
 GUIDES = {"guide.readme": ("README.md", "README.ada.md"), "guide.setup": ("docs/setup.en.md", "docs/setup.ada.md")}
 GUIDE_TABS = {"guide.readme": "Guide - README", "guide.setup": "Guide - setup"}
 NOT_YET = ("> Wording not translated yet is shown in English. To translate it, see "
@@ -201,7 +201,7 @@ def import_(path):
                 unknown.append(key)
     (MESSAGES / "ada.json").write_text(json.dumps(_nest(ada, en_tree), ensure_ascii=False, indent=2) + "\n",
                                        encoding="utf-8")
-    print(f"Wrote messages/ada.json: {sum(1 for k in en if ada.get(k))} of {len(en)} in Dangme.")
+    print(f"Wrote api/messages/ada.json: {sum(1 for k in en if ada.get(k))} of {len(en)} in Dangme.")
     if unknown:
         print("Skipped keys the app no longer has:", ", ".join(unknown))
     _write_guides(guides)

@@ -9,7 +9,7 @@ import psycopg
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "pyapp"))
+sys.path.insert(0, str(ROOT / "api" / "pyapp"))
 sys.path.insert(0, str(ROOT / "api"))
 import st_shim  # noqa: E402,F401  (a stand-in for Streamlit, as on Vercel)
 
@@ -146,7 +146,7 @@ def english_workbook(tmp_path):
 
 @pytest.fixture
 def dangme_workbook(tmp_path):
-    font = str(ROOT / "pyapp" / "fonts" / "DejaVuSans.ttf")  # the app's own font has ɛ ɔ ŋ
+    font = str(ROOT / "api" / "pyapp" / "fonts" / "DejaVuSans.ttf")  # the app's own font has ɛ ɔ ŋ
     first = dangme_week_lines("SEPTEMBER 14-20", "YESAIA 60-62", 4, "B")
     return _pdf(tmp_path / "dangme.pdf", [
         dangme_week_lines("SEPTEMBER 7-13", "YESAIA 58-59", 2, "A"),

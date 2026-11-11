@@ -3,7 +3,7 @@
 
 ## Before you start
 
-- Every word the app shows or prints lives in `messages/en.json` (English) and `messages/ada.json` (Dangme), under
+- Every word the app shows or prints lives in `api/messages/en.json` (English) and `api/messages/ada.json` (Dangme), under
   the same keys. `ada` is the language code for Dangme.
 - An empty Dangme entry shows the English, so the app works while the translation is still being filled in.
 - Words in curly brackets, like `{name}` or `{count}`, are filled in by the app. Keep them exactly as they are, but
@@ -20,13 +20,13 @@
    wrong. The two **Guide** tabs hold this repository's guides, a paragraph per row.
 3. Read it back in:
    `python3 tools/translations.py import dangme-translations.xlsx`
-   This updates `messages/ada.json`, `README.ada.md` and `docs/setup.ada.md`.
+   This updates `api/messages/ada.json`, `README.ada.md` and `docs/setup.ada.md`.
 4. Check it: `npm run check:messages`
 5. Commit and push. Vercel publishes the new wording.
 
 ### Directly in the file
 
-1. Open `messages/ada.json` and find the key (search `messages/en.json` for the English to find it).
+1. Open `api/messages/ada.json` and find the key (search `api/messages/en.json` for the English to find it).
 2. Type the Dangme between the quotes. Use “ ” for quotation marks, not `'`.
 3. Run `npm run check:messages`, then commit and push.
 

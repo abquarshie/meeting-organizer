@@ -4,8 +4,8 @@ import "./globals.css";
 
 // The last resort, when even the page frame failed. It replaces the whole document, so it brings its own html and body,
 // and it sits outside the translations, so it reads the message files itself and shows the English and the Dangme.
-import en from "../../messages/en.json";
-import ada from "../../messages/ada.json";
+import en from "../../api/messages/en.json";
+import ada from "../../api/messages/ada.json";
 
 const both = (en: string, ada: string) => (ada && ada !== en ? `${en} / ${ada}` : en);
 export default function GlobalError({ retry }: { error: Error & { digest?: string }; retry: () => void }) {

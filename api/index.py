@@ -3,7 +3,7 @@
 
 The scheduling rules (who may take a part, rotation, suggestions, the checks
 before a save, undo) and every document (S-89 slips, the S-140, schedule
-sheets, share cards, backups) live in the Python modules in pyapp/. This file
+sheets, share cards, backups) live in the Python modules in api/pyapp/. This file
 only puts them behind HTTP: `/api/py?op=<name>`, JSON in and out, or a file
 for downloads.
 
@@ -26,8 +26,8 @@ import time
 import traceback
 from urllib.parse import parse_qs, quote, urlparse
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "pyapp"))
+HERE = Path(__file__).resolve().parent     # the service root: everything it needs is under api/
+sys.path.insert(0, str(HERE / "pyapp"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import st_shim  # noqa: E402  (must come before the app's modules)
@@ -727,3 +727,23 @@ class handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         self._respond("POST")
+
+
+_REASONS = {200: "OK", 400: "Bad Request", 401: "Unauthorized", 404: "Not Found", 500: "Internal Server Error"}
+
+
+def app(environ, start_response):
+    """The same function as a WSGI app, for Vercel Services (which run Python as `app`) and any WSGI server."""
+    try:
+        length = int(environ.get("CONTENT_LENGTH") or 0)
+    except ValueError:
+        length = 0
+    body = environ["wsgi.input"].read(length) if length else b""
+    path = environ.get("PATH_INFO") or "/"
+    if environ.get("QUERY_STRING"):
+        path += "?" + environ["QUERY_STRING"]
+    headers = {"cookie": environ.get("HTTP_COOKIE", "")}
+    status, ctype, data, extra = handle(environ.get("REQUEST_METHOD", "GET"), path, headers, body)
+    start_response(f"{status} {_REASONS.get(status, 'OK')}",
+                   [("Content-Type", ctype), ("Content-Length", str(len(data)))] + list(extra.items()))
+    return [data]

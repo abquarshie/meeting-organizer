@@ -1,5 +1,5 @@
 "use client";
-// Calls to the Python function (api/py.py), which holds the scheduling rules and builds the documents. The browser
+// Calls to the Python function (api/index.py), which holds the scheduling rules and builds the documents. The browser
 // sends the sign-in cookie with each call, and the function checks it.
 
 export type PyResult<T> = ({ ok: true; message?: string } & T) | { ok: false; error: string };

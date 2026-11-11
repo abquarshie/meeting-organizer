@@ -1,6 +1,6 @@
 import { getRequestConfig } from "next-intl/server";
-import en from "../../messages/en.json";
-import ada from "../../messages/ada.json";
+import en from "../../api/messages/en.json";
+import ada from "../../api/messages/ada.json";
 import { getAppLocale, isLocale } from "@/lib/locale";
 
 type Tree = { [k: string]: string | Tree };

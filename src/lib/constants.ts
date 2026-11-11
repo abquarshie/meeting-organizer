@@ -1,4 +1,4 @@
-// The fixed lists from pyapp/constants.py. Keep in step with that file: the Python side uses the same names. These are
+// The fixed lists from api/pyapp/constants.py. Keep in step with that file: the Python side uses the same names. These are
 // the values stored in the database, always in English; lib/labels.ts gives the words shown for them on screen.
 export const MIDWEEK = "Midweek Meeting";
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Serves api/py.py on http://127.0.0.1:8001 for local development (`npm run dev:py`).
+"""Serves api/index.py on http://127.0.0.1:8001 for local development (`npm run dev:py`).
 
 On Vercel the same file runs as a function; `next dev` forwards /api/py here.
 Reads DATABASE_URL and SESSION_SECRET from .env when they aren't already set.
@@ -15,7 +15,7 @@ if env.exists():
             key, value = line.split("=", 1)
             os.environ.setdefault(key.strip(), value.strip().strip('"').replace("\\$", "$"))
 
-from py import handler  # noqa: E402
+from index import handler  # noqa: E402
 
 
 if __name__ == "__main__":

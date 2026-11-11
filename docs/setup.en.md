@@ -71,5 +71,6 @@
 - **The workbook shows weeks with missing parts.** Check the workbook is the Life and Ministry Meeting Workbook PDF
   itself, not a scan or a photo. Parts can be corrected by hand on the Workbook PDF page.
 - **Five wrong passwords.** Sign-in is locked for a minute. Wait, then try again.
-- **Vercel deploys from an unexpected branch.** The repository started out empty, so its first branch became the
-  default branch. Under Vercel → Settings → Git you can choose which branch is Production.
+- **Deployments stays empty.** Vercel only builds when a commit is pushed after the repository was connected. Open
+  the project's **Settings → Git** to check it is connected, then push a change to `main` (or use **Create
+  Deployment** on the Deployments page). Production is the `main` branch.

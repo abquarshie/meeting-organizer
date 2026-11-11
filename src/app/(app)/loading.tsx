@@ -1,7 +1,10 @@
+import { useTranslations } from "next-intl";
+
 // Shown at once while a page reads the database, so a tap always answers straight away.
 export default function Loading() {
+  const t = useTranslations("common");
   return (
-    <div aria-busy="true" aria-label="Loading">
+    <div aria-busy="true" aria-label={t("loading")}>
       <div className="page-head">
         <div className="skeleton h-8 w-56" />
         <div className="skeleton mt-2 h-4 w-80 max-w-full" />

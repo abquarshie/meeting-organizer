@@ -1,4 +1,8 @@
 import type { NextConfig } from "next";
+import createNextIntlPlugin from "next-intl/plugin";
+
+// The screens' wording comes from messages/en.json and messages/ada.json (Dangme), picked in src/i18n/request.ts.
+const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
 // Sent with every page: no framing by other sites, no guessing file types, and no camera, microphone or location.
 const SECURITY_HEADERS = [
@@ -22,4 +26,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withNextIntl(nextConfig);

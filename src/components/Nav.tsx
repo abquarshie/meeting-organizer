@@ -9,10 +9,10 @@ function active(path: string, href: string) {
   return href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`);
 }
 
-export function SideNav({ items }: { items: NavItem[] }) {
+export function SideNav({ items, label }: { items: NavItem[]; label: string }) {
   const path = usePathname();
   return (
-    <nav aria-label="Main" className="grid gap-0.5">
+    <nav aria-label={label} className="grid gap-0.5">
       {items.map((i) => (
         <Link key={i.href} href={i.href} aria-current={active(path, i.href) ? "page" : undefined}
           className="nav-link">
@@ -24,13 +24,13 @@ export function SideNav({ items }: { items: NavItem[] }) {
 }
 
 /** Phones: the five pages used most along the bottom, the rest under More. */
-export function TabBar({ items }: { items: NavItem[] }) {
+export function TabBar({ items, label, more: moreLabel }: { items: NavItem[]; label: string; more: string }) {
   const path = usePathname();
   const main = items.filter((i) => i.phone);
   const more = items.filter((i) => !i.phone);
   const inMore = more.some((i) => active(path, i.href));
   return (
-    <nav aria-label="Main"
+    <nav aria-label={label}
       className="fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-surface/90 px-1 pt-1.5 pb-[calc(.375rem+env(safe-area-inset-bottom))] backdrop-blur md:hidden">
       {main.map((i) => (
         <Link key={i.href} href={i.href} aria-current={active(path, i.href) ? "page" : undefined}
@@ -41,7 +41,7 @@ export function TabBar({ items }: { items: NavItem[] }) {
       {more.length ? <details className="relative flex flex-1">
         <summary aria-current={inMore ? "page" : undefined}
           className="flex flex-1 cursor-pointer list-none flex-col items-center gap-0.5 rounded-lg py-1 text-[11px] font-medium text-faint aria-[current=page]:font-semibold aria-[current=page]:text-brand-ink [&_svg]:size-6">
-          <Icon name="settings" />More
+          <Icon name="settings" />{moreLabel}
         </summary>
         <div className="absolute right-1 bottom-[calc(100%+8px)] grid w-56 gap-0.5 rounded-2xl border border-line bg-surface p-2 shadow-lift">
           {more.map((i) => (

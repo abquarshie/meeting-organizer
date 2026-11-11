@@ -1,36 +1,35 @@
 import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
 import { Note, PageHead } from "@/components/ui";
-import { getRole } from "@/lib/auth";
-import { LANGUAGES, MIDWEEK, WEEKEND } from "@/lib/constants";
-import { eventWeeks, getEvents, getMetas, getPeople, getRows, getSettings, key, meetingRows, savedMeetings, setting, templateNames } from "@/lib/data";
+import { MIDWEEK } from "@/lib/constants";
+import { eventWeeks, getEvents, getMetas, getPeople, getRows, getSettings, key, meetingRows, savedMeetings, slipLanguage, templateNames } from "@/lib/data";
+import { dateWords } from "@/lib/dateWords";
 import { fmtDate, monthLabel, relativeWeek, today, weekLabel, weekStart } from "@/lib/dates";
-import { talkText } from "@/lib/text";
+import { hallLabel } from "@/lib/labels";
 import { Printing } from "./Printing";
 
-export const metadata: Metadata = { title: "Slips and printing" };
-
-const partLabel = (r: { part_name: string | null; part_no: number | null; minutes: number | null; hall: string }) => {
-  if (r.part_name === "Public Talk Speaker") return "Public Talk & Closing Prayer";
-  let label = r.part_name ?? "";
-  if (r.minutes && !label.toLowerCase().includes("min")) label += ` (${r.minutes} min)`;
-  if (r.part_no) label = `${r.part_no}. ${label}`;
-  if (r.hall !== "main_hall") label += r.hall === "aux_1" ? " · Auxiliary classroom 1" : " · Auxiliary classroom 2";
-  return label;
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getTranslations("print"))("title") };
+}
 
 export default async function PrintPage({ searchParams }: { searchParams: Promise<{ meeting?: string; month?: string }> }) {
-  const [sp, allRows, metas, people, settings, templates, events, role] = await Promise.all([
-    searchParams, getRows(), getMetas(), getPeople(), getSettings(), templateNames(), getEvents(), getRole(),
+  const [sp, allRows, metas, people, settings, templates, events, t] = await Promise.all([
+    searchParams, getRows(), getMetas(), getPeople(), getSettings(), templateNames(), getEvents(), getTranslations(),
   ]);
-  // a weekend-only user prints the weekend schedule sheet and nothing else
-  const weekendOnly = role === "weekend";
-  const rows = weekendOnly ? allRows.filter((r) => r.meeting_type === WEEKEND) : allRows;
+  const W = dateWords(t);
+  const rows = allRows.filter((r) => r.meeting_type === MIDWEEK);
   const meetings = savedMeetings(rows);
-  const title = weekendOnly ? "Weekend printing" : "Slips and printing";
   if (!meetings.length) {
-    return <><PageHead title={title} /><Note>No {weekendOnly ? "weekend " : ""}schedules have been created yet.</Note></>;
+    return <><PageHead title={t("print.title")} /><Note>{t("print.none_yet")}</Note></>;
   }
-  const language = (LANGUAGES as readonly string[]).includes(setting(settings, "slip_language")) ? setting(settings, "slip_language") : "English";
+  const partLabel = (r: { part_name: string | null; part_no: number | null; minutes: number | null; hall: string }) => {
+    let label = r.part_name ?? "";
+    if (r.minutes && !label.toLowerCase().includes("min")) label += ` ${t("doc.minutes", { count: r.minutes })}`;
+    if (r.part_no) label = `${r.part_no}. ${label}`;
+    if (r.hall !== "main_hall") label += ` · ${hallLabel(t, r.hall)}`;
+    return label;
+  };
+  const language = slipLanguage(settings);
   const months = [...new Set(meetings.map((m) => m.date.slice(0, 7)))].sort().reverse();
   const scope = sp.month ? "month" : "meeting";
   const now = today();
@@ -38,14 +37,19 @@ export default async function PrintPage({ searchParams }: { searchParams: Promis
   const meeting = meetings.find((m) => key(m.date, m.type) === sp.meeting) ?? firstAhead;
   const month = scope === "month" && months.includes(sp.month!) ? sp.month! : meeting.date.slice(0, 7);
   const chosen = (scope === "month" ? meetings.filter((m) => m.date.startsWith(month)) : [meeting])
-    .sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type));
+    .sort((a, b) => a.date.localeCompare(b.date));
 
   const meta = metas.get(key(meeting.date, meeting.type));
   const summary = scope === "meeting" ? {
-    heading: meta?.heading ?? "", talk: meeting.type === WEEKEND ? talkText(meta) || "— title not entered —" : "",
-    rows: meetingRows(rows, meeting.date, meeting.type).sort((a, b) => a.sort_order - b.sort_order).map((r) => ({
-      part: partLabel(r), person: r.person ?? "— unassigned —", assistant: r.needs_assistant === 1 ? r.assistant ?? "— needed —" : "",
-    })),
+    heading: meta?.heading ?? "",
+    rows: meetingRows(rows, meeting.date, meeting.type).sort((a, b) => a.sort_order - b.sort_order).map((r) => {
+      const needAssistant = r.needs_assistant === 1;
+      return {
+        part: partLabel(r), person: r.person ?? t("common.unassigned"),
+        assistant: needAssistant ? r.assistant ?? t("print.needed") : "",
+        gap: [!r.person, needAssistant && !r.assistant] as [boolean, boolean],
+      };
+    }),
   } : null;
   const chosenRows = chosen.flatMap((m) => meetingRows(rows, m.date, m.type));
   const slipCount = chosenRows.filter((r) => r.student_part === 1 && r.person).length;
@@ -54,11 +58,12 @@ export default async function PrintPage({ searchParams }: { searchParams: Promis
   // weeks for the weekly card: every week with a meeting, and assembly/convention weeks
   const weeks = [...new Set([...meetings.map((m) => weekStart(m.date)), ...eventWeeks(events).keys()])].sort();
   const thisWeek = weekStart(now);
+  const near = [W.thisWeek, W.lastWeek, W.nextWeek];
   const weekOptions = weeks.map((w) => {
-    const rel = relativeWeek(w, thisWeek);
-    return { value: w, label: weekLabel(w) + (["this week", "last week", "next week"].includes(rel) ? ` · ${rel}` : "") };
+    const rel = relativeWeek(w, thisWeek, W);
+    return { value: w, label: weekLabel(w, W) + (near.includes(rel) ? ` · ${rel}` : "") };
   });
-  const allMonths = months.map((m) => ({ value: m, label: monthLabel(m) }));
+  const allMonths = months.map((m) => ({ value: m, label: monthLabel(m, W) }));
   // who has something in each month, for the one-person card
   const perMonth = new Map<string, Map<number, number>>();
   for (const r of rows) {
@@ -70,23 +75,21 @@ export default async function PrintPage({ searchParams }: { searchParams: Promis
   const monthPeople: Record<string, { id: number; label: string }[]> = {};
   for (const m of months) {
     const counts = perMonth.get(m) ?? new Map<number, number>();
-    monthPeople[m] = people.filter((p) => counts.has(p.id)).map((p) => ({ id: p.id, label: `${p.name} (${counts.get(p.id)})` }));
+    monthPeople[m] = people.filter((p) => counts.has(p.id))
+      .map((p) => ({ id: p.id, label: t("print.person_count", { name: p.name, count: counts.get(p.id) ?? 0 }) }));
   }
 
   return (
     <>
-      <PageHead title={title} sub={weekendOnly ? "The weekend schedule sheet, for one meeting or a whole month."
-        : "Slips, schedule sheets, the S-140, the CSV and monthly messages, for one meeting or a whole month."} />
+      <PageHead title={t("print.title")} sub={t("print.sub")} />
       <Printing
-        weekendOnly={weekendOnly} scope={scope} language={language}
-        meetings={meetings.map((m) => ({ value: key(m.date, m.type), label: `${fmtDate(m.date)} · ${m.type}` }))}
+        scope={scope} language={language}
+        meetings={meetings.map((m) => ({ value: key(m.date, m.type), label: fmtDate(m.date, W) }))}
         meeting={key(meeting.date, meeting.type)} months={allMonths} month={month}
-        chosen={chosen.map((m) => key(m.date, m.type))} chosenText={chosen.map((m) => `${fmtDate(m.date)} · ${m.type}`).join(", ")}
-        summary={summary} editHref={`/schedule?${new URLSearchParams({ date: meeting.date, type: meeting.type, mode: "edit" })}`}
+        chosen={chosen.map((m) => key(m.date, m.type))} chosenText={chosen.map((m) => fmtDate(m.date, W)).join(", ")}
+        summary={summary} editHref={`/schedule?${new URLSearchParams({ date: meeting.date, mode: "edit" })}`}
         slipCount={slipCount} slipAux={slipAux} hasS89={templates.has(`s89_${language}`)} hasS140={templates.has(`s140_${language}`)}
-        weekendMonths={[...new Set(meetings.filter((m) => m.type === WEEKEND).map((m) => m.date.slice(0, 7)))].sort()}
-        weekendMeetings={meetings.filter((m) => m.type === WEEKEND).map((m) => key(m.date, m.type))}
-        midweekMonths={[...new Set(meetings.filter((m) => m.type === MIDWEEK).map((m) => m.date.slice(0, 7)))].sort().reverse()}
+        midweekMonths={months}
         weeks={weekOptions} defaultWeek={weeks.find((w) => w >= thisWeek) ?? weeks[weeks.length - 1]}
         monthPeople={monthPeople} />
     </>

@@ -1,6 +1,7 @@
 "use client";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
-import { saveCalendarTimes } from "@/actions/settings";
+import { saveCalendarTime } from "@/actions/settings";
 import { Icon } from "@/components/icons";
 import { useToast } from "@/components/Toaster";
 import { useAct } from "@/components/useAct";
@@ -8,14 +9,15 @@ import { useAct } from "@/components/useAct";
 export type Card = { id: number; name: string; wa: string; text: string; lines: string[]; cal: string };
 
 export function ReminderList({ cards }: { cards: Card[] }) {
+  const t = useTranslations("rem");
   const toast = useToast();
   const [sent, setSent] = useState<Set<number>>(new Set());
   const copy = async (text: string, what: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      toast(`${what} copied`);
+      toast(t("copied", { what }));
     } catch {
-      toast("Couldn't copy here. Long-press to select the text instead.", { tone: "warn" });
+      toast(t("cant_copy"), { tone: "warn" });
     }
   };
   return (
@@ -29,18 +31,16 @@ export function ReminderList({ cards }: { cards: Card[] }) {
           <div className="flex flex-wrap gap-2">
             <a className="btn primary" href={c.wa} target="_blank" rel="noopener noreferrer"
               onClick={() => setSent((s) => new Set(s).add(c.id))}>
-              <Icon name="check" />WhatsApp
+              <Icon name="check" />{t("whatsapp")}
             </a>
-            <button type="button" className="btn" onClick={() => copy(c.text, "Message")}><Icon name="copy" />Copy</button>
-            {c.cal ? <>
-            <button type="button" className="btn" onClick={() => copy(`${window.location.origin}${c.cal}`, "Calendar link")}>
-              <Icon name="calendar" />Calendar link
+            <button type="button" className="btn" onClick={() => copy(c.text, t("message"))}><Icon name="copy" />{t("copy")}</button>
+            <button type="button" className="btn" onClick={() => copy(`${window.location.origin}${c.cal}`, t("cal_link"))}>
+              <Icon name="calendar" />{t("cal_link")}
             </button>
             {/* webcal:// makes an iPhone offer "Subscribe" instead of adding the parts once */}
-            <button type="button" className="btn" onClick={() => copy(`webcal://${window.location.host}${c.cal}`, "iPhone calendar link")}>
-              <Icon name="calendar" />iPhone link
+            <button type="button" className="btn" onClick={() => copy(`webcal://${window.location.host}${c.cal}`, t("iphone_link_long"))}>
+              <Icon name="calendar" />{t("iphone_link")}
             </button>
-            </> : null}
           </div>
         </div>
       ))}
@@ -48,17 +48,14 @@ export function ReminderList({ cards }: { cards: Card[] }) {
   );
 }
 
-export function CalendarTimes({ midweek, weekend }: { midweek: string; weekend: string }) {
+export function CalendarTimes({ midweek }: { midweek: string }) {
+  const t = useTranslations("rem");
   const [m, setM] = useState(midweek);
-  const [w, setW] = useState(weekend);
   const [busy, act] = useAct();
   return (
-    <form className="form" onSubmit={(e) => { e.preventDefault(); act(() => saveCalendarTimes(m, w)); }}>
-      <div className="row2">
-        <label className="field"><span>Midweek meeting starts</span><input className="input" value={m} onChange={(e) => setM(e.target.value)} placeholder="e.g. 18:30" /></label>
-        <label className="field"><span>Weekend meeting starts</span><input className="input" value={w} onChange={(e) => setW(e.target.value)} placeholder="e.g. 9:00am" /></label>
-      </div>
-      <button className="btn w-fit" disabled={busy}>Save times</button>
+    <form className="form" onSubmit={(e) => { e.preventDefault(); act(() => saveCalendarTime(m)); }}>
+      <label className="field max-w-xs"><span>{t("midweek_starts")}</span><input className="input" value={m} onChange={(e) => setM(e.target.value)} placeholder={t("time_ph_evening")} /></label>
+      <button className="btn w-fit" disabled={busy}>{t("save_times")}</button>
     </form>
   );
 }

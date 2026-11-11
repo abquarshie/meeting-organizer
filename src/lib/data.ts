@@ -1,6 +1,6 @@
 import "server-only";
-import { EVENT_KINDS, EVENT_TEXT, GROUPS, MIDWEEK, PRIVILEGES, SAME_ROLE_GAP_DAYS, WEEKDAYS } from "./constants";
-import { addDays, fmtDate, today, weekStart } from "./dates";
+import { EVENT_KINDS, GROUPS, LANGUAGES, MIDWEEK, PRIVILEGES, SAME_ROLE_GAP_DAYS, WEEKDAYS } from "./constants";
+import { addDays, today, weekStart } from "./dates";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "./db";
 import { nfc } from "./text";
@@ -39,9 +39,10 @@ export function isSuspended(p: Person, onDate: string): boolean {
   return !p.suspendedUntil || onDate <= p.suspendedUntil;
 }
 
-export function suspensionText(p: Person, on = today()): string {
-  if (!isSuspended(p, on)) return "";
-  return p.suspendedUntil ? `Suspended until ${fmtDate(p.suspendedUntil)}` : "Suspended";
+/** null when not suspended on that day; otherwise the end date, or "" for no end date. Pages word it. */
+export function suspendedUntil(p: Person, on = today()): string | null {
+  if (!isSuspended(p, on)) return null;
+  return p.suspendedUntil ?? "";
 }
 
 export function familyNames(people: Person[]): string[] {
@@ -53,9 +54,7 @@ export type Row = {
   id: number; meeting_date: string; meeting_type: string; part_no: number | null; part_name: string | null;
   minutes: number | null; section: string | null; role: string | null; student_part: number; needs_assistant: number;
   student_id: number | null; assistant_id: number | null; sort_order: number; hall: string; visitor: string | null;
-  visitor_congregation: string | null; person: string | null; assistant: string | null;
-  /** The public talk's theme, from the meeting (weekend only). */
-  talk_title: string | null;
+  person: string | null; assistant: string | null;
 };
 
 /** Saved parts with the names joined in, newest meeting first (db._schedules). Pass a date range or a person to read
@@ -71,13 +70,12 @@ export async function getRows(only: { from?: string; to?: string; person?: numbe
     SELECT sc.id, sc.meeting_date, sc.meeting_type, sc.part_no, sc.part_name, sc.minutes, sc.section, sc.role,
            COALESCE(sc.student_part, 0) AS student_part, COALESCE(sc.needs_assistant, 0) AS needs_assistant,
            sc.student_id, sc.assistant_id, COALESCE(sc.sort_order, 0) AS sort_order,
-           COALESCE(sc.hall, 'main_hall') AS hall, sc.visitor, sc.visitor_congregation,
+           COALESCE(sc.hall, 'main_hall') AS hall, sc.visitor,
            COALESCE(sc.visitor, s.name, sc.assigned_person) AS person,
-           COALESCE(a.name, sc.assistant_name) AS assistant, NULLIF(TRIM(m.talk_title), '') AS talk_title
+           COALESCE(a.name, sc.assistant_name) AS assistant
       FROM schedules sc
       LEFT JOIN students s ON s.id = sc.student_id
       LEFT JOIN students a ON a.id = sc.assistant_id
-      LEFT JOIN meetings m ON m.meeting_date = sc.meeting_date AND m.meeting_type = sc.meeting_type
       ${filter}
      ORDER BY sc.meeting_date DESC, sc.meeting_type, sc.sort_order, sc.id`;
   return rows.map((r) => ({ ...r, person: r.person || null, assistant: r.assistant || null }));
@@ -148,15 +146,14 @@ export function fillCounts(rows: Row[]): { filled: number; needed: number } {
 
 export type Meta = {
   heading: string; opening_song: string; middle_song: string; closing_song: string; aux: number | null;
-  talk_number: string; talk_title: string; book: string; aux_group: string;
+  book: string; aux_group: string;
 };
 
 export async function getMetas(): Promise<Map<MeetingKey, Meta>> {
   const rows = await prisma.meetings.findMany();
   return new Map(rows.map((m) => [key(m.meeting_date, m.meeting_type), {
     heading: m.heading ?? "", opening_song: m.opening_song ?? "", middle_song: m.middle_song ?? "",
-    closing_song: m.closing_song ?? "", aux: m.aux, talk_number: m.talk_number ?? "", talk_title: m.talk_title ?? "",
-    book: m.book ?? "", aux_group: m.aux_group ?? "",
+    closing_song: m.closing_song ?? "", aux: m.aux, book: m.book ?? "", aux_group: m.aux_group ?? "",
   }]));
 }
 
@@ -168,6 +165,12 @@ export async function getSettings(): Promise<Map<string, string>> {
 export function setting(settings: Map<string, string>, k: string, fallback = ""): string {
   const v = settings.get(k);
   return v === undefined ? fallback : v;
+}
+
+/** The slip language ("English" or "Dangme"), English when unset. */
+export function slipLanguage(settings: Map<string, string>): string {
+  const v = setting(settings, "slip_language");
+  return (LANGUAGES as readonly string[]).includes(v) ? v : "English";
 }
 
 export function gapDays(settings: Map<string, string>): number {
@@ -208,11 +211,6 @@ export function eventFor(events: EventPeriod[], date: string): EventPeriod["kind
   return events.find((e) => e.start <= date && date <= e.end)?.kind ?? null;
 }
 
-export function eventLabel(events: EventPeriod[], date: string): string | null {
-  const kind = eventFor(events, date);
-  return kind ? EVENT_TEXT[kind].en : null;
-}
-
 /** {Monday: kind} for every marked week (db.event_weeks). */
 export function eventWeeks(events: EventPeriod[]): Map<string, string> {
   const out = new Map<string, string>();
@@ -222,10 +220,9 @@ export function eventWeeks(events: EventPeriod[]): Map<string, string> {
   return out;
 }
 
-function meetingDayOffset(settings: Map<string, string>, type: string): number {
-  const name = setting(settings, type === MIDWEEK ? "midweek_day" : "weekend_day", type === MIDWEEK ? "Wednesday" : "Sunday");
-  const i = WEEKDAYS.indexOf(name);
-  return i >= 0 ? i : type === MIDWEEK ? 2 : 6;
+function meetingDayOffset(settings: Map<string, string>): number {
+  const i = WEEKDAYS.indexOf(setting(settings, "midweek_day", "Wednesday"));
+  return i >= 0 ? i : 2;
 }
 
 export type WorkbookStatus = { label: string; meeting: string; status: "saved" | "no meeting" | "to create" };
@@ -235,7 +232,7 @@ export type WorkbookStatus = { label: string; meeting: string; status: "saved" |
 export function workbookStatus(weeks: WorkbookWeek[], rows: Row[], settings: Map<string, string>,
   events: EventPeriod[]): WorkbookStatus[] {
   const saved = savedMeetings(rows).filter((m) => m.type === MIDWEEK).map((m) => m.date);
-  const offset = meetingDayOffset(settings, MIDWEEK);
+  const offset = meetingDayOffset(settings);
   return weeks.filter((w) => w.start).map((w) => {
     const meeting = addDays(w.start!, offset);
     const status = saved.some((d) => w.start! <= d && d <= (w.end ?? w.start!)) ? "saved"

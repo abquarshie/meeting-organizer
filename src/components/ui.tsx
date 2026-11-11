@@ -50,9 +50,9 @@ export function Stat({ label, value, icon, sub, tone }: {
   );
 }
 
-export function Tabs({ tabs, current }: { tabs: { href: string; label: string }[]; current: string }) {
+export function Tabs({ tabs, current, label }: { tabs: { href: string; label: string }[]; current: string; label: string }) {
   return (
-    <nav className="tabs" aria-label="Sections">
+    <nav className="tabs" aria-label={label}>
       {tabs.map((t) => (
         <Link key={t.href} href={t.href} aria-current={t.href === current ? "page" : undefined}>{t.label}</Link>
       ))}

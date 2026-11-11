@@ -1,54 +1,53 @@
 import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
 import { Empty, PageHead, Tabs } from "@/components/ui";
-import { getUser, roleOf } from "@/lib/auth";
 import { calPath } from "@/lib/calLink";
-import { WEEKEND } from "@/lib/constants";
-import { getRows, getSettings, setting } from "@/lib/data";
+import { getRows, getSettings, setting, slipLanguage } from "@/lib/data";
+import { dateWords } from "@/lib/dateWords";
 import { addDays, longDate, today } from "@/lib/dates";
+import { reminderWords } from "@/lib/docWords";
 import { reminderText, remindersFrom } from "@/lib/reminders";
 import { CalendarTimes, ReminderList, type Card } from "./Reminders";
 
-export const metadata: Metadata = { title: "Reminders" };
-const SPANS = [["7", "Next 7 days"], ["14", "Next 14 days"]] as const;
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getTranslations("rem"))("title") };
+}
 
 export default async function RemindersPage({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
   const sp = await searchParams;
   const days = sp.days === "14" ? 14 : 7;
   const now = today();
-  const [user, rows, settings] = await Promise.all([
-    getUser(), getRows({ from: now, to: addDays(now, days - 1) }), getSettings(),
+  const [rows, settings, t] = await Promise.all([
+    getRows({ from: now, to: addDays(now, days - 1) }), getSettings(), getTranslations(),
   ]);
-  const weekendOnly = user !== null && roleOf(user) === "weekend";
+  const W = dateWords(t);
+  // the messages go to the participants, so they are in the slip language; the cards here are in the app language
+  const words = await reminderWords(slipLanguage(settings));
   const congregation = setting(settings, "congregation");
-  const list = remindersFrom(weekendOnly ? rows.filter((r) => r.meeting_type === WEEKEND) : rows);
+  const list = remindersFrom(rows, words);
   const cards: Card[] = list.map((r) => {
-    const text = reminderText(r, congregation);
+    const text = reminderText(r, congregation, words);
     return {
-      id: r.id, name: r.name, text, cal: weekendOnly ? "" : calPath(r.id), // calendar links are for full sign-ins only
+      id: r.id, name: r.name, text, cal: calPath(r.id),
       wa: `https://wa.me/?text=${encodeURIComponent(text)}`,
-      lines: r.duties.map((d) => `${longDate(d.date)}: ${d.assisting ? `assisting ${d.with ?? ""} with ` : ""}${d.part}`),
+      lines: r.duties.map((d) => d.assisting
+        ? t("rem.line_assisting", { date: longDate(d.date, W), name: d.with ?? "", part: d.part })
+        : t("rem.line", { date: longDate(d.date, W), part: d.part })),
     };
   });
 
   return (
     <>
-      <PageHead title="Reminders" sub={`Everyone with a part coming up, with a ready WhatsApp message${weekendOnly ? "" : " and a calendar link for their phone"}.`} />
-      <Tabs current={`/reminders?days=${days}`} tabs={SPANS.map(([d, label]) => ({ href: `/reminders?days=${d}`, label }))} />
+      <PageHead title={t("rem.title")} sub={t("rem.sub")} />
+      <Tabs label={t("common.sections")} current={`/reminders?days=${days}`}
+        tabs={[{ href: "/reminders?days=7", label: t("rem.next7") }, { href: "/reminders?days=14", label: t("rem.next14") }]} />
       <div className="stack">
-        {cards.length ? <ReminderList cards={cards} /> : <Empty>No one has a part in the next {days} days.</Empty>}
-        {weekendOnly ? null : (
+        {cards.length ? <ReminderList cards={cards} /> : <Empty>{t("rem.none", { days })}</Empty>}
         <details className="card">
-          <summary>Calendar links</summary>
-          <p className="mt-0 text-sm text-muted">
-            Each person&apos;s Calendar link is a feed of all their parts. Once subscribed, new and changed parts appear by
-            themselves, with an alert the evening before. On Android, add the Calendar link in Google Calendar under
-            &ldquo;From URL&rdquo;. On an iPhone, send the iPhone link instead: tapping it offers &ldquo;Subscribe&rdquo;
-            (the plain link only adds the parts once). Set the meeting times so entries have the right hours; without
-            them they show as all-day.
-          </p>
-          <CalendarTimes midweek={setting(settings, "midweek_time")} weekend={setting(settings, "weekend_time") || setting(settings, "meeting_time")} />
+          <summary>{t("rem.cal_title")}</summary>
+          <p className="mt-0 text-sm text-muted">{t("rem.cal_help")}</p>
+          <CalendarTimes midweek={setting(settings, "midweek_time")} />
         </details>
-        )}
       </div>
     </>
   );

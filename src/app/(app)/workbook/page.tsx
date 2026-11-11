@@ -1,17 +1,20 @@
 import type { Metadata } from "next";
-import { requireFull } from "@/lib/auth";
+import { getTranslations } from "next-intl/server";
 import { PageHead } from "@/components/ui";
 import { getSettings, getWorkbook, setting } from "@/lib/data";
 import { WorkbookPage } from "./WorkbookPage";
 
-export const metadata: Metadata = { title: "Workbook PDF" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("wb");
+  return { title: t("title") };
+}
 
 export default async function Page() {
-  await requireFull(); // not for a weekend-only user
+  const t = await getTranslations("wb");
   const [{ weeks, file }, settings] = await Promise.all([getWorkbook(), getSettings()]);
   return (
     <>
-      <PageHead title="Workbook PDF" sub="Upload the meeting workbook so each week gets its real parts." />
+      <PageHead title={t("title")} sub={t("sub")} />
       <WorkbookPage weeks={weeks} file={file} skipPast={setting(settings, "skip_past_weeks", "1") === "1"}
         datesSure={setting(settings, "workbook_dates_sure", "0") === "1"} />
     </>

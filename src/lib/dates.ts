@@ -1,9 +1,16 @@
-// Dates are stored as ISO text (YYYY-MM-DD), as the Python app writes them. These helpers work on that text in UTC,
-// so a server's time zone never shifts a day.
+// Dates are stored as ISO text (YYYY-MM-DD), as the Python side writes them. These helpers work on that text in UTC,
+// so a server's time zone never shifts a day. The month and day names come from the message files (DateWords), since
+// browsers have no Dangme date names; see lib/dateWords.ts for getting them on the server and in the browser.
 
-const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
-  "November", "December"];
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+export type DateWords = {
+  months: string[]; // January … December
+  shortMonths: string[]; // Jan … Dec
+  days: string[]; // Monday … Sunday
+  shortDays: string[]; // Mon … Sun
+  today: string; tomorrow: string; inDays: (n: number) => string;
+  thisWeek: string; lastWeek: string; nextWeek: string; weeksAgo: (n: number) => string; inWeeks: (n: number) => string;
+  weekOf: (n: number, month: string, dates: string) => string; noDates: string;
+};
 
 export function isISODate(s: unknown): s is string {
   if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
@@ -43,31 +50,38 @@ export function weekStart(iso: string): string {
   return addDays(iso, -weekday(iso));
 }
 
-const short = (d: Date) => MONTHS[d.getUTCMonth()].slice(0, 3);
+const short = (d: Date, W: DateWords) => W.shortMonths[d.getUTCMonth()];
+const dayName = (d: Date, W: DateWords) => W.days[(d.getUTCDay() + 6) % 7];
 
 /** "21 October 2026", or "21 Oct" when short. */
-export function fmtDate(iso: string | null | undefined, isShort = false): string {
+export function fmtDate(iso: string | null | undefined, W: DateWords, isShort = false): string {
   if (!iso || !isISODate(iso)) return iso ?? "";
   const d = parse(iso);
-  return isShort ? `${d.getUTCDate()} ${short(d)}` : `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  return isShort ? `${d.getUTCDate()} ${short(d, W)}` : `${d.getUTCDate()} ${W.months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
 /** "Wednesday 21 October". */
-export function longDate(iso: string): string {
+export function longDate(iso: string, W: DateWords): string {
   const d = parse(iso);
-  return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+  return `${dayName(d, W)} ${d.getUTCDate()} ${W.months[d.getUTCMonth()]}`;
 }
 
 /** "Wed 21 Oct". */
-export function shortDay(iso: string): string {
+export function shortDay(iso: string, W: DateWords): string {
   const d = parse(iso);
-  return `${DAYS[d.getUTCDay()].slice(0, 3)} ${d.getUTCDate()} ${short(d)}`;
+  return `${W.shortDays[(d.getUTCDay() + 6) % 7]} ${d.getUTCDate()} ${short(d, W)}`;
+}
+
+/** The day of the month and the short month, for a date box. */
+export function dayAndMonth(iso: string, W: DateWords): [string, string] {
+  const d = parse(iso);
+  return [String(d.getUTCDate()), short(d, W)];
 }
 
 /** "2026-10" -> "October 2026". */
-export function monthLabel(ym: string): string {
+export function monthLabel(ym: string, W: DateWords): string {
   const [y, m] = ym.split("-").map(Number);
-  return `${MONTHS[m - 1]} ${y}`;
+  return `${W.months[m - 1]} ${y}`;
 }
 
 export function lastDayOfMonth(ym: string): string {
@@ -76,50 +90,50 @@ export function lastDayOfMonth(ym: string): string {
 }
 
 /** "Week 2 of October (5–11 Oct)", as utils.week_label. */
-export function weekLabel(iso: string): string {
+export function weekLabel(iso: string, W: DateWords): string {
   const mon = weekStart(iso);
   const sun = addDays(mon, 6);
   const m = parse(mon), s = parse(sun);
   const n = Math.floor((m.getUTCDate() - 1) / 7) + 1;
   const span = m.getUTCMonth() === s.getUTCMonth()
-    ? `${m.getUTCDate()}–${s.getUTCDate()} ${short(s)}`
-    : `${m.getUTCDate()} ${short(m)} – ${s.getUTCDate()} ${short(s)}`;
-  return `Week ${n} of ${MONTHS[m.getUTCMonth()]} (${span})`;
+    ? `${m.getUTCDate()}–${s.getUTCDate()} ${short(s, W)}`
+    : `${m.getUTCDate()} ${short(m, W)} – ${s.getUTCDate()} ${short(s, W)}`;
+  return W.weekOf(n, W.months[m.getUTCMonth()], span);
 }
 
 /** "this week", "last week", "next week", "3 weeks ago", "in 2 weeks". */
-export function relativeWeek(other: string, meeting: string): string {
+export function relativeWeek(other: string, meeting: string, W: DateWords): string {
   const n = Math.round(daysBetween(weekStart(meeting), weekStart(other)) / 7);
-  if (n === 0) return "this week";
-  if (n === -1) return "last week";
-  if (n === 1) return "next week";
-  return n < 0 ? `${-n} weeks ago` : `in ${n} weeks`;
+  if (n === 0) return W.thisWeek;
+  if (n === -1) return W.lastWeek;
+  if (n === 1) return W.nextWeek;
+  return n < 0 ? W.weeksAgo(-n) : W.inWeeks(n);
 }
 
 /** "in 3 days", "today", "tomorrow". */
-export function daysAway(iso: string): string {
+export function daysAway(iso: string, W: DateWords): string {
   const n = daysBetween(today(), iso);
-  return n === 0 ? "today" : n === 1 ? "tomorrow" : `in ${n} days`;
+  return n === 0 ? W.today : n === 1 ? W.tomorrow : W.inDays(n);
 }
 
 /** "14–20 Sep 2026" for a workbook week's dates, as workbook.week_dates_text. */
-export function weekDatesText(start?: string, end?: string): string {
-  if (!start || !end) return "no dates";
+export function weekDatesText(start: string | undefined, end: string | undefined, W: DateWords): string {
+  if (!start || !end) return W.noDates;
   const s = parse(start), e = parse(end);
   return s.getUTCMonth() === e.getUTCMonth()
-    ? `${s.getUTCDate()}–${e.getUTCDate()} ${short(e)} ${e.getUTCFullYear()}`
-    : `${s.getUTCDate()} ${short(s)}–${e.getUTCDate()} ${short(e)} ${e.getUTCFullYear()}`;
+    ? `${s.getUTCDate()}–${e.getUTCDate()} ${short(e, W)} ${e.getUTCFullYear()}`
+    : `${s.getUTCDate()} ${short(s, W)}–${e.getUTCDate()} ${short(e, W)} ${e.getUTCFullYear()}`;
 }
 
 /** Collapse consecutive days into ranges: "3–9 Oct, 20 Oct". */
-export function awaySummary(dates: string[]): string {
+export function awaySummary(dates: string[], W: DateWords): string {
   const days = [...dates].sort();
   const out: string[] = [];
   let start: string | null = null, prev: string | null = null;
   for (const d of [...days, null]) {
     if (start === null) { start = prev = d; continue; }
     if (d !== null && prev !== null && daysBetween(prev, d) === 1) { prev = d; continue; }
-    out.push(start === prev ? fmtDate(start, true) : `${fmtDate(start, true)}–${fmtDate(prev, true)}`);
+    out.push(start === prev ? fmtDate(start, W, true) : `${fmtDate(start, W, true)}–${fmtDate(prev, W, true)}`);
     start = prev = d;
   }
   return out.join(", ");

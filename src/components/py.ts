@@ -4,13 +4,28 @@
 
 export type PyResult<T> = ({ ok: true; message?: string } & T) | { ok: false; error: string };
 
+// The few messages written here rather than by the server, in the app language. ClientWords (in the app frame) fills
+// them in from the message files when the page loads; these English ones only show if it hasn't run yet.
+const WORDS = {
+  timeout: "The server took too long to answer. Please try again; if it keeps happening, the database may be unreachable.",
+  signIn: "Please sign in again.",
+  noAnswer: (code: number) => `The server didn't answer (${code}). Please try again.`,
+  unreachable: "Couldn't reach the server. Check the connection and try again.",
+  tooBig: "The upload didn't get through. Files over about 4 MB are too big for the server.",
+  downloaded: (file: string) => `Downloaded ${file}.`,
+};
+export type PyWords = typeof WORDS;
+export function setPyWords(words: PyWords) {
+  Object.assign(WORDS, words);
+}
+
 // A little over the function's 60-second limit (vercel.json), so a stuck request ends in a message, not a spinner.
 const TIMEOUT_MS = 70_000;
 const signal = () => AbortSignal.timeout(TIMEOUT_MS);
 
 function failed(e: unknown, fallback: string): { ok: false; error: string } {
   if (e instanceof DOMException && e.name === "TimeoutError") {
-    return { ok: false, error: "The server took too long to answer. Please try again; if it keeps happening, the database may be unreachable." };
+    return { ok: false, error: WORDS.timeout };
   }
   return { ok: false, error: fallback };
 }
@@ -20,10 +35,10 @@ async function read<T>(res: Response): Promise<PyResult<T>> {
   try { data = await res.json(); } catch { /* not JSON: a crash or a timeout */ }
   if (res.status === 401) {
     window.location.href = "/login";
-    return { ok: false, error: "Please sign in again." };
+    return { ok: false, error: WORDS.signIn };
   }
   if (!res.ok || data.error) {
-    return { ok: false, error: (data.error as string) ?? `The server didn't answer (${res.status}). Please try again.` };
+    return { ok: false, error: (data.error as string) ?? WORDS.noAnswer(res.status) };
   }
   return { ok: true, ...(data as T) };
 }
@@ -34,7 +49,7 @@ export async function py<T = object>(op: string, body: unknown): Promise<PyResul
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: signal(),
     }));
   } catch (e) {
-    return failed(e, "Couldn't reach the server. Check the connection and try again.");
+    return failed(e, WORDS.unreachable);
   }
 }
 
@@ -42,7 +57,7 @@ export async function pyGet<T = object>(op: string, params: Record<string, strin
   try {
     return await read<T>(await fetch(pyUrl(op, params), { signal: signal() }));
   } catch (e) {
-    return failed(e, "Couldn't reach the server. Check the connection and try again.");
+    return failed(e, WORDS.unreachable);
   }
 }
 
@@ -51,7 +66,7 @@ export async function pyUpload<T = object>(op: string, file: File, params: Recor
   try {
     return await read<T>(await fetch(pyUrl(op, { ...params, name: file.name }), { method: "POST", body: file, signal: signal() }));
   } catch (e) {
-    return failed(e, "The upload didn't get through. Files over about 4 MB are too big for the server.");
+    return failed(e, WORDS.tooBig);
   }
 }
 
@@ -77,8 +92,8 @@ export async function download(op: string, params: Record<string, string | numbe
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-    return { ok: true, message: `Downloaded ${name}.` };
+    return { ok: true, message: WORDS.downloaded(name) };
   } catch (e) {
-    return failed(e, "Couldn't reach the server. Check the connection and try again.");
+    return failed(e, WORDS.unreachable);
   }
 }

@@ -1,28 +1,25 @@
 import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
 import { PageHead } from "@/components/ui";
-import { getRole } from "@/lib/auth";
-import { MEETING_TYPES, WEEKEND } from "@/lib/constants";
+import { MIDWEEK } from "@/lib/constants";
 import { isISODate, today } from "@/lib/dates";
 import { getMeetingList } from "@/lib/data";
 import { Editor } from "./Editor";
 
-export const metadata: Metadata = { title: "Create or edit" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: (await getTranslations("sched"))("title") };
+}
 
 export default async function SchedulePage({ searchParams }: {
-  searchParams: Promise<{ date?: string; type?: string; mode?: string }>;
+  searchParams: Promise<{ date?: string; mode?: string }>;
 }) {
-  const sp = await searchParams;
-  const [all, role] = await Promise.all([getMeetingList(), getRole()]);
-  // a weekend-only user creates and edits weekend meetings only
-  const types: readonly string[] = role === "weekend" ? [WEEKEND] : MEETING_TYPES;
-  const saved = all.filter((m) => types.includes(m.type));
+  const [sp, all, t] = await Promise.all([searchParams, getMeetingList(), getTranslations("sched")]);
+  const saved = all.filter((m) => m.type === MIDWEEK);
   const date = isISODate(sp.date) ? sp.date : today();
-  const type = types.includes(sp.type ?? "") ? sp.type! : types[0]!;
   return (
     <>
-      <PageHead title="Create or edit" sub="Pick a date, then fill each part. Only eligible people are listed." />
-      <Editor key={`${date}|${type}`} date={date} type={type} mode={sp.mode === "edit" ? "edit" : "new"}
-        saved={saved} types={types} />
+      <PageHead title={t("title")} sub={t("sub")} />
+      <Editor key={date} date={date} mode={sp.mode === "edit" ? "edit" : "new"} saved={saved} />
     </>
   );
 }

@@ -1,35 +1,28 @@
 "use server";
 import { redirect } from "next/navigation";
-import { logChange } from "@/lib/action";
-import { checkSignIn, endSession, startSession } from "@/lib/auth";
+import { getTranslations } from "next-intl/server";
+import { endSession, passwordMatches, signInConfigured, startSession } from "@/lib/auth";
 import { cleared, failed, lockedFor, MAX_TRIES } from "@/lib/lockout";
-import { nfc } from "@/lib/text";
 
 export async function signInAction(_: string | null, form: FormData): Promise<string | null> {
-  const name = nfc(form.get("name"));
+  const t = await getTranslations("signin");
   let wait: number;
   try {
     wait = await lockedFor();
   } catch (e) {
     console.error(e);
-    return "Sign-in is unavailable right now. Please try again in a moment.";
+    return t("unavailable");
   }
-  if (wait > 0) return `Too many wrong passwords. Try again in ${Math.ceil(wait / 1000)} seconds.`;
-  const problem = checkSignIn(name, String(form.get("password") ?? ""));
-  if (problem) {
+  if (wait > 0) return t("locked_seconds", { seconds: Math.ceil(wait / 1000) });
+  if (!signInConfigured()) return t("not_set_up");
+  if (!passwordMatches(String(form.get("password") ?? ""))) {
     await new Promise((r) => setTimeout(r, 600)); // slows down anyone guessing the password
-    if (!name) return problem; // a missing name isn't a guess
     const n = await failed().catch((e) => { console.error(e); return 0; });
-    if (n >= MAX_TRIES) return "Too many wrong passwords. Wait a minute and try again.";
-    return `${problem} ${Math.max(MAX_TRIES - n, 1)} tries left.`;
+    if (n >= MAX_TRIES) return t("locked_minute");
+    return t("tries_left", { message: t("wrong"), count: Math.max(MAX_TRIES - n, 1) });
   }
   await cleared().catch((e) => console.error(e));
-  await startSession(name);
-  try {
-    await logChange(name, "Signed in", name);
-  } catch (e) {
-    console.error(e); // the change log line isn't worth refusing the sign-in over
-  }
+  await startSession();
   const next = String(form.get("next") ?? "");
   redirect(next.startsWith("/") && !next.startsWith("//") ? next : "/");
 }

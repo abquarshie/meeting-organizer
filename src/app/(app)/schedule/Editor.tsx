@@ -1,4 +1,5 @@
 "use client";
+import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
@@ -6,21 +7,22 @@ import { py } from "@/components/py";
 import { Confirm } from "@/components/Sheet";
 import { Bar, Note } from "@/components/ui";
 import { useAct } from "@/components/useAct";
-import { CATEGORIES, MEETING_TYPES, MIDWEEK, SECTION_COLORS, SECTION_TITLES } from "@/lib/constants";
+import { CATEGORIES, MIDWEEK, SECTION_COLORS } from "@/lib/constants";
+import { dateWords } from "@/lib/dateWords";
 import { fmtDate } from "@/lib/dates";
-import { talkLabel } from "@/lib/text";
+import { categoryLabel, sectionLabel } from "@/lib/labels";
 
 type Slot = {
-  hall: string; allow_visitor: boolean; part_no: number | null; title: string; role: string; section: string;
+  hall: string; part_no: number | null; title: string; role: string; section: string;
   minutes: number | null; student_part: boolean; needs_assistant: boolean;
 };
-type Pick = { sid: number | null; aid: number | null; visitor: string; cong: string; isVisitor: boolean };
+type Pick = { sid: number | null; aid: number | null };
 type Issue = { level: "error" | "warning"; slots: number[]; text: string };
-type Meta = Record<"heading" | "book" | "opening_song" | "middle_song" | "closing_song" | "aux_group" | "talk_number" | "talk_title", string>;
+type Meta = Record<"heading" | "book" | "opening_song" | "middle_song" | "closing_song" | "aux_group", string>;
 type PersonInfo = { name: string; gender: string; family: string | null; active: boolean };
 type EditorData = {
-  weekLabel: string; relative: string; event: string | null; eventGa?: string;
-  saved: boolean; slots: Slot[]; slotLabels: string[]; picks: Pick[]; meta: Meta; aux: boolean; symposium: boolean;
+  weekLabel: string; relative: string; event: string | null; eventOther?: string;
+  saved: boolean; slots: Slot[]; slotLabels: string[]; picks: Pick[]; meta: Meta; aux: boolean;
   workbook: null | {
     weeks: { label: string; dates: string }[]; matched: string | null; differs: boolean; use: boolean;
     week: string | null; savedCount: number; workbookCount: number;
@@ -30,9 +32,9 @@ type EditorData = {
   options: { ids: number[]; labels: Record<string, string>; eligible: number[]; mixed: boolean }[];
   assistantOrder: number[]; assistantLabels: Record<string, string>; unavailable: string[];
   snapshot: { note: string; reason: string } | null; issues: Issue[];
-  talks: { number: string; title: string }[]; activeCount: number;
+  activeCount: number;
 };
-type Choices = { aux?: boolean; symposium?: boolean; useWorkbook?: boolean; week?: string | null };
+type Choices = { aux?: boolean; useWorkbook?: boolean; week?: string | null };
 
 const slotKey = (s: Slot) => `${s.hall}|${s.role}|${s.part_no ?? s.title.toLowerCase()}`;
 
@@ -42,9 +44,12 @@ function sameFamily(people: Record<string, PersonInfo>, a: number | null, b: num
   return Boolean(fa) && fa === people[b]?.family;
 }
 
-export function Editor({ date, type, mode, saved, types = MEETING_TYPES }: {
-  date: string; type: string; mode: "new" | "edit"; saved: { date: string; type: string }[]; types?: readonly string[];
+export function Editor({ date, mode, saved }: {
+  date: string; mode: "new" | "edit"; saved: { date: string; type: string }[];
 }) {
+  const type = MIDWEEK;
+  const t = useTranslations();
+  const W = dateWords(t);
   const router = useRouter();
   const [busy, act] = useAct();
   const [data, setData] = useState<EditorData | null>(null);
@@ -57,8 +62,8 @@ export function Editor({ date, type, mode, saved, types = MEETING_TYPES }: {
   const [choices, setChoices] = useState<Choices>({});
   const touched = useRef(false); // picks changed since the last load: carry them over when the parts list changes
 
-  const go = (d: string, t: string, m = mode) => {
-    const q = new URLSearchParams({ date: d, type: t });
+  const go = (d: string, m = mode) => {
+    const q = new URLSearchParams({ date: d, type });
     if (m === "edit") q.set("mode", "edit");
     router.replace(`/schedule?${q.toString()}`);
   };
@@ -91,11 +96,11 @@ export function Editor({ date, type, mode, saved, types = MEETING_TYPES }: {
   useEffect(() => {
     if (!data || data.event || !touched.current) return;
     const seq = ++checkSeq.current;
-    const t = setTimeout(async () => {
-      const r = await py<{ issues: Issue[] }>("check", { date, type, slots: data.slots, picks, symposium: data.symposium });
+    const timer = setTimeout(async () => {
+      const r = await py<{ issues: Issue[] }>("check", { date, type, slots: data.slots, picks });
       if (r.ok && seq === checkSeq.current) setIssues(r.issues);
     }, 350);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [picks, data, date, type]);
 
   const setPick = (i: number, patch: Partial<Pick>) => {
@@ -111,30 +116,23 @@ export function Editor({ date, type, mode, saved, types = MEETING_TYPES }: {
 
   const header = (
     <div className="card mb-4 grid gap-3">
-      <div className="seg w-fit" role="group" aria-label="Mode">
-        <button type="button" aria-pressed={mode === "new"} onClick={() => go(date, type, "new")}>Create new</button>
-        <button type="button" aria-pressed={mode === "edit"} onClick={() => go(saved[0]?.date ?? date, saved[0]?.type ?? type, "edit")}>Edit saved</button>
+      <div className="seg w-fit" role="group" aria-label={t("sched.mode")}>
+        <button type="button" aria-pressed={mode === "new"} onClick={() => go(date, "new")}>{t("sched.create_new")}</button>
+        <button type="button" aria-pressed={mode === "edit"} onClick={() => go(saved[0]?.date ?? date, "edit")}>{t("sched.edit_saved")}</button>
       </div>
       {mode === "edit" ? (
         saved.length ? (
-          <label className="field"><span>Saved schedule</span>
-            <select className="input" value={`${date}|${type}`} onChange={(e) => { const [d, t] = e.target.value.split("|"); go(d, t); }}>
-              {!saved.some((m) => m.date === date && m.type === type) ? <option value={`${date}|${type}`}>{fmtDate(date)} · {type}</option> : null}
-              {saved.map((m) => <option key={`${m.date}|${m.type}`} value={`${m.date}|${m.type}`}>{fmtDate(m.date)} · {m.type}</option>)}
+          <label className="field"><span>{t("sched.saved_schedule")}</span>
+            <select className="input" value={date} onChange={(e) => go(e.target.value)}>
+              {!saved.some((m) => m.date === date) ? <option value={date}>{fmtDate(date, W)}</option> : null}
+              {saved.map((m) => <option key={m.date} value={m.date}>{fmtDate(m.date, W)}</option>)}
             </select>
           </label>
-        ) : <Note>No saved schedules yet.</Note>
+        ) : <Note>{t("sched.no_saved")}</Note>
       ) : (
-        <div className="row2">
-          <label className="field"><span>Meeting type</span>
-            <select className="input" value={type} onChange={(e) => go(date, e.target.value)}>
-              {types.map((t) => <option key={t}>{t}</option>)}
-            </select>
-          </label>
-          <label className="field"><span>Meeting date</span>
-            <input className="input" type="date" value={date} onChange={(e) => e.target.value && go(e.target.value, type)} />
-          </label>
-        </div>
+        <label className="field max-w-xs"><span>{t("sched.meeting_date")}</span>
+          <input className="input" type="date" value={date} onChange={(e) => e.target.value && go(e.target.value)} />
+        </label>
       )}
       {data ? (
         <div className="text-sm text-muted">
@@ -145,35 +143,30 @@ export function Editor({ date, type, mode, saved, types = MEETING_TYPES }: {
   );
 
   if (error) return <>{header}<Note tone="error">{error}</Note></>;
-  if (!data || !meta) return <>{header}<div className="empty">Loading…</div></>;
+  if (!data || !meta) return <>{header}<div className="empty">{t("common.loading")}</div></>;
   if (data.event) {
     return (
       <>
         {header}
         <div className="card">
           <h2 className="mt-0 text-lg font-bold">{data.event}</h2>
-          <div className="text-sm text-muted">In Ga: {data.eventGa}</div>
-          <p>This week is marked as an assembly or convention week, so there is no midweek or weekend meeting to schedule.</p>
-          <div className="caption">To schedule it after all, remove the mark under Admin → Settings → Assemblies &amp; conventions.
-            A meeting cleared when the week was marked can then be brought back with Undo on this page.</div>
+          {data.eventOther ? <div className="text-sm text-muted">{t("sched.in_other_language", { language: t("lang.dangme") })} {data.eventOther}</div> : null}
+          <p>{t("sched.event_week")}</p>
+          <div className="caption">{t("sched.event_undo")}</div>
         </div>
       </>
     );
   }
-  if (data.activeCount === 0) return <>{header}<Note tone="warn">Add participants on the Participants page first.</Note></>;
+  if (data.activeCount === 0) return <>{header}<Note tone="warn">{t("sched.no_people")}</Note></>;
 
-  const { slots, people, options, symposium } = data;
-  const visitorOk = (s: Slot) => s.allow_visitor && !(symposium && s.role === "Public Talk");
-  const talkSlots = slots.map((s, i) => (s.role === "Public Talk" ? i : -1)).filter((i) => i >= 0);
-  const lastTalk = talkSlots.length ? talkSlots[talkSlots.length - 1] : -1;
+  const { slots, people, options } = data;
 
   // progress: a part plus its assistant where one is needed (utils.fill_progress)
   let needed = 0, filled = 0;
   slots.forEach((s, i) => {
     const p = picks[i];
     needed += 1 + (s.needs_assistant ? 1 : 0);
-    filled += (visitorOk(s) && p.isVisitor ? (p.visitor.trim() ? 1 : 0) : (p.sid !== null ? 1 : 0))
-      + (s.needs_assistant && !(visitorOk(s) && p.isVisitor) && p.aid !== null ? 1 : 0);
+    filled += (p.sid !== null ? 1 : 0) + (s.needs_assistant && p.aid !== null ? 1 : 0);
   });
   const errors = issues.filter((x) => x.level === "error");
   const warnings = issues.filter((x) => x.level === "warning");
@@ -184,14 +177,14 @@ export function Editor({ date, type, mode, saved, types = MEETING_TYPES }: {
     touched.current = true;
     setPicks((ps) => ps.map((p, i) => {
       const s = r.picks[String(i)];
-      if (!s || p.sid !== null || (visitorOk(slots[i]) && p.isVisitor)) return p;
+      if (!s || p.sid !== null) return p;
       return { ...p, sid: s[0], aid: slots[i].needs_assistant ? s[1] : null };
     }));
-    return { ok: true, message: "Suggestions filled in. Check them, then save." };
+    return { ok: true, message: t("sched.suggested") };
   });
 
   const save = () => act(async () => {
-    const r = await py("save", { date, type, slots, picks, symposium, aux: data.aux, meta });
+    const r = await py("save", { date, type, slots, picks, aux: data.aux, meta });
     if (r.ok) {
       touched.current = false;
       setChoices({});
@@ -213,86 +206,20 @@ export function Editor({ date, type, mode, saved, types = MEETING_TYPES }: {
     return r;
   });
 
-  const talkInputs = () => {
-    const known = data.talks.find((t) => t.number === meta.talk_number.trim());
-    const typing = !known && (meta.talk_number || meta.talk_title || !data.talks.length);
-    return (
-      <div className="mt-2 grid gap-2 rounded-xl border border-line p-3">
-        <div className="text-sm font-semibold">Public talk</div>
-        {data.talks.length ? (
-          <select className="input" value={known ? known.number : typing ? "__type" : ""}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v === "__type" || v === "") setMeta({ ...meta, talk_number: "", talk_title: "" });
-              else setMeta({ ...meta, talk_number: v, talk_title: data.talks.find((t) => t.number === v)?.title ?? "" });
-            }}>
-            <option value="">— Choose a talk —</option>
-            {data.talks.map((t) => <option key={t.number} value={t.number}>{talkLabel(t.number, t.title)}</option>)}
-            <option value="__type">Not in the list (type it in)</option>
-          </select>
-        ) : <div className="caption mt-0">No talks stored yet. Add them under Public talks → Talk list and they appear here.</div>}
-        {!known ? (
-          <div className="grid gap-2 sm:grid-cols-[110px_minmax(0,1fr)]">
-            <input className="input" placeholder="Talk no." value={meta.talk_number}
-              onChange={(e) => setMeta({ ...meta, talk_number: e.target.value })} aria-label="Talk number" />
-            <input className="input" placeholder="Title of the public talk" value={meta.talk_title}
-              onChange={(e) => setMeta({ ...meta, talk_title: e.target.value })} aria-label="Talk title" />
-          </div>
-        ) : null}
-      </div>
-    );
-  };
-
   const renderSlot = (i: number) => {
     const s = slots[i], p = picks[i], opt = options[i];
     const label = data.slotLabels[i];
     const notes = (issuesAt.get(i) ?? []).map((x, k) => <div key={k} className={`slot-issue ${x.level}`}>⚠ {x.text}</div>);
-    if (visitorOk(s)) {
-      const visitorBox = (
-        <label className="check">
-          <input type="checkbox" checked={p.isVisitor} onChange={(e) => setPick(i, { isVisitor: e.target.checked })} />
-          Visiting speaker (another congregation)
-        </label>
-      );
-      if (p.isVisitor) {
-        return (
-          <div className="slot" key={i}>
-            <div className="slot-title">{label}</div>
-            {visitorBox}
-            <div className="grid gap-2 sm:grid-cols-[3fr_2fr]">
-              <input className="input" placeholder="Speaker's name, e.g. Jonathan Adjei" value={p.visitor}
-                onChange={(e) => setPick(i, { visitor: e.target.value })} aria-label="Speaker's name" />
-              {s.role === "Public Talk" ? (
-                <input className="input" placeholder="His congregation" value={p.cong}
-                  onChange={(e) => setPick(i, { cong: e.target.value })} aria-label="His congregation" />
-              ) : null}
-            </div>
-            {notes}
-            {i === lastTalk ? talkInputs() : null}
-          </div>
-        );
-      }
-      return (
-        <div className="slot" key={i}>
-          <div className="slot-title">{label}</div>
-          {visitorBox}
-          {personSelect(i, s, p, opt)}
-          {notes}
-          {i === lastTalk ? talkInputs() : null}
-        </div>
-      );
-    }
     return (
       <div className="slot" key={i}>
         {s.needs_assistant ? (
           <div className="grid gap-x-3 sm:grid-cols-2">
             <div className="slot-title">{label}</div>
-            <div className="slot-title max-sm:hidden">Assistant</div>
+            <div className="slot-title max-sm:hidden">{t("sched.assistant")}</div>
           </div>
         ) : <div className="slot-title">{label}</div>}
         {personSelect(i, s, p, opt)}
         {notes}
-        {i === lastTalk ? talkInputs() : null}
       </div>
     );
   };
@@ -308,19 +235,19 @@ export function Editor({ date, type, mode, saved, types = MEETING_TYPES }: {
     const main = (
       <div className="grid gap-1.5">
         {opt.mixed ? (
-          <div className="seg w-fit" role="group" aria-label="Category">
+          <div className="seg w-fit" role="group" aria-label={t("sched.category")}>
             {CATEGORIES.map((c) => (
               <button key={c} type="button" aria-pressed={category === c}
-                onClick={() => setCategories((x) => ({ ...x, [i]: c }))}>{c}</button>
+                onClick={() => setCategories((x) => ({ ...x, [i]: c }))}>{categoryLabel(t, c)}</button>
             ))}
           </div>
         ) : null}
         <select className="input" aria-label={data!.slotLabels[i]} value={p.sid ?? ""}
           onChange={(e) => setPick(i, { sid: e.target.value ? Number(e.target.value) : null })}>
-          <option value="">— Unassigned —</option>
+          <option value="">{t("common.unassigned")}</option>
           {ids.map((id) => <option key={id} value={id}>{opt.labels[id] ?? people[id]?.name}</option>)}
         </select>
-        {gone ? <div className="msg hint">{people[p.sid!]?.name ?? "This person"} is no longer available. Choose someone else.</div> : null}
+        {gone ? <div className="msg hint">{t("sched.gone", { name: people[p.sid!]?.name ?? t("sched.this_person") })}</div> : null}
       </div>
     );
     if (!s.needs_assistant) return main;
@@ -333,10 +260,10 @@ export function Editor({ date, type, mode, saved, types = MEETING_TYPES }: {
       <div className="grid gap-x-3 gap-y-1.5 sm:grid-cols-2">
         {main}
         <div className="grid gap-1.5 self-end">
-          <span className="slot-title sm:hidden">Assistant</span>
-          <select className="input" aria-label={`Assistant for ${data!.slotLabels[i]}`} value={p.aid ?? ""}
+          <span className="slot-title sm:hidden">{t("sched.assistant")}</span>
+          <select className="input" aria-label={t("sched.assistant_for", { part: data!.slotLabels[i] })} value={p.aid ?? ""}
             onChange={(e) => setPick(i, { aid: e.target.value ? Number(e.target.value) : null })}>
-            <option value="">— Unassigned —</option>
+            <option value="">{t("common.unassigned")}</option>
             {pool.map((id) => <option key={id} value={id}>{data!.assistantLabels[id] ?? people[id]?.name}</option>)}
           </select>
         </div>
@@ -350,88 +277,78 @@ export function Editor({ date, type, mode, saved, types = MEETING_TYPES }: {
     if (!groups.length || groups[groups.length - 1].section !== s.section) groups.push({ section: s.section, items: [] });
     groups[groups.length - 1].items.push(i);
   });
-  const wide = (s: Slot) => s.needs_assistant || s.allow_visitor || s.role === "Public Talk";
+  const wide = (s: Slot) => s.needs_assistant;
 
   const wbk = data.workbook;
   return (
     <>
       {header}
       <div className="stack">
-        {mode === "new" && data.saved ? <Note>A schedule is already saved for this date. It&apos;s loaded below, and saving will replace it.</Note> : null}
+        {mode === "new" && data.saved ? <Note>{t("sched.already_saved")}</Note> : null}
 
-        {type === MIDWEEK ? (
-          <div className="card grid gap-3">
+        <div className="card grid gap-3">
             {wbk ? (
               <>
-                {!wbk.matched ? <Note tone="warn">No workbook week covers {fmtDate(date)}. Check the week dates on the Workbook PDF page, or pick the week yourself below.</Note> : null}
-                {wbk.differs ? <Note tone="warn">The saved schedule has {wbk.savedCount} numbered part(s), but the workbook week <b>{wbk.matched}</b> has {wbk.workbookCount}, or the titles differ. Tick the box below to switch to the workbook parts; names carry over where the part number and role match.</Note> : null}
+                {!wbk.matched ? <Note tone="warn">{t("sched.no_workbook_week", { date: fmtDate(date, W) })}</Note> : null}
+                {wbk.differs ? <Note tone="warn">{t("sched.workbook_differs", { saved: wbk.savedCount, week: wbk.matched ?? "", count: wbk.workbookCount })}</Note> : null}
                 <label className="check">
                   <input type="checkbox" checked={wbk.use} onChange={(e) => change({ useWorkbook: e.target.checked })} />
-                  Use parts from the uploaded workbook
+                  {t("sched.use_workbook")}
                 </label>
                 {wbk.use ? (
-                  <label className="field"><span>Workbook week</span>
+                  <label className="field"><span>{t("sched.workbook_week")}</span>
                     <select className="input" value={wbk.week ?? ""} onChange={(e) => change({ week: e.target.value || null })}>
-                      {!wbk.week ? <option value="">Choose the workbook week</option> : null}
+                      {!wbk.week ? <option value="">{t("sched.choose_week")}</option> : null}
                       {wbk.weeks.map((w) => <option key={w.label} value={w.label}>{w.label} · {w.dates}</option>)}
                     </select>
                   </label>
                 ) : null}
                 {wbk.week ? (
                   <details className="rounded-xl border border-line px-3 py-2" open={wbk.differs}>
-                    <summary className="cursor-pointer text-sm font-semibold">Cross-check with the workbook: {wbk.week} ({wbk.parts.length} parts)</summary>
-                    {wbk.gaps.length ? <Note tone="error">Part number(s) not found in the workbook text: {wbk.gaps.join(", ")}. Add them on the Workbook PDF page, under Review and correct a week.</Note> : null}
+                    <summary className="cursor-pointer text-sm font-semibold">{t("sched.cross_check", { week: wbk.week, count: wbk.parts.length })}</summary>
+                    {wbk.gaps.length ? <Note tone="error">{t("sched.gaps", { numbers: wbk.gaps.join(", ") })}</Note> : null}
                     <div className="table-wrap mt-2">
                       <table className="table">
-                        <thead><tr><th>No.</th><th>Title</th><th>Min</th><th>Section</th></tr></thead>
-                        <tbody>{wbk.parts.map((r, k) => <tr key={k}><td>{r["No."]}</td><td>{r.Title}</td><td>{r.Min}</td><td>{r.Section}</td></tr>)}</tbody>
+                        <thead><tr><th>{t("sched.col_no")}</th><th>{t("sched.col_title")}</th><th>{t("sched.col_min")}</th><th>{t("sched.col_section")}</th></tr></thead>
+                        <tbody>{wbk.parts.map((r, k) => <tr key={k}><td>{r["No."]}</td><td>{r.Title}</td><td>{r.Min}</td><td>{sectionLabel(t, r.Section)}</td></tr>)}</tbody>
                       </table>
                     </div>
                     {wbk.text ? <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-subtle p-2 text-xs">{wbk.text}</pre> : null}
                   </details>
                 ) : null}
               </>
-            ) : <div className="caption mt-0">Using the standard 8-part list. Upload the workbook PDF to get this week&apos;s real part numbers and titles.</div>}
+            ) : <div className="caption mt-0">{t("sched.standard_list")}</div>}
             <label className="check">
               <input type="checkbox" checked={data.aux} onChange={(e) => change({ aux: e.target.checked })} />
-              Auxiliary classroom this week
+              {t("sched.aux")}
             </label>
             {data.aux ? (
-              <label className="field max-w-xs"><span>Group using the auxiliary classroom</span>
-                <input className="input" placeholder="e.g. 1" value={meta.aux_group} onChange={(e) => setMeta({ ...meta, aux_group: e.target.value })} />
+              <label className="field max-w-xs"><span>{t("sched.aux_group")}</span>
+                <input className="input" placeholder={t("month.group_ph")} value={meta.aux_group} onChange={(e) => setMeta({ ...meta, aux_group: e.target.value })} />
               </label>
             ) : null}
           </div>
-        ) : (
-          <div className="card grid gap-2">
-            <label className="check">
-              <input type="checkbox" checked={symposium} onChange={(e) => change({ symposium: e.target.checked })} />
-              Symposium: one talk shared by two speakers
-            </label>
-            {symposium ? <div className="caption mt-0">Both speakers are brothers from the congregation. Guest speakers don&apos;t give symposiums.</div> : null}
-          </div>
-        )}
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           {data.unavailable.length ? (
             <details className="text-sm">
-              <summary className="cursor-pointer font-semibold text-muted">{data.unavailable.length} not available this week</summary>
+              <summary className="cursor-pointer font-semibold text-muted">{t("sched.unavailable", { count: data.unavailable.length })}</summary>
               <div className="mt-1">{data.unavailable.join(", ")}</div>
-              <div className="caption">Away, going out to speak elsewhere, suspended or inactive. They are left out of the lists below.</div>
+              <div className="caption">{t("sched.unavailable_hint")}</div>
             </details>
           ) : <span />}
           <button type="button" className="btn" onClick={suggest} disabled={busy}
-            title="Fills only the empty slots. Anyone already chosen stays, and is not suggested anywhere else.">
-            <Icon name="sparkle" /> Suggest
+            title={t("sched.suggest_hint")}>
+            <Icon name="sparkle" /> {t("sched.suggest")}
           </button>
         </div>
 
         <details className="card">
-          <summary>Meeting details (used on the S-140)</summary>
+          <summary>{t("sched.details")}</summary>
           <div className="row2">
-            {([["heading", "Heading"], ["book", "Bible reading"], ["opening_song", "Opening song"], ["middle_song", "Middle song"],
-              ["closing_song", "Closing song"]] as const).map(([k, l]) => (
-              <label key={k} className="field"><span>{l}</span>
+            {([["heading", "sched.heading"], ["book", "sched.bible_reading"], ["opening_song", "sched.opening_song"],
+              ["middle_song", "sched.middle_song"], ["closing_song", "sched.closing_song"]] as const).map(([k, l]) => (
+              <label key={k} className="field"><span>{t(l)}</span>
                 <input className="input" value={meta[k]} onChange={(e) => setMeta({ ...meta, [k]: e.target.value })} />
               </label>
             ))}
@@ -447,7 +364,7 @@ export function Editor({ date, type, mode, saved, types = MEETING_TYPES }: {
           }
           return (
             <section key={gi}>
-              <div className="section-head"><span className="swatch" style={{ background: SECTION_COLORS[g.section] ?? "#8A94A0" }} />{SECTION_TITLES[g.section] ?? g.section}</div>
+              <div className="section-head"><span className="swatch" style={{ background: SECTION_COLORS[g.section] ?? "#8A94A0" }} />{sectionLabel(t, g.section)}</div>
               <div className="card grid gap-4">
                 {rows.map((r, k) => (
                   <div key={k} className={r.length > 1 ? "grid gap-4 sm:grid-cols-2" : "grid"}>{r.map(renderSlot)}</div>
@@ -459,30 +376,30 @@ export function Editor({ date, type, mode, saved, types = MEETING_TYPES }: {
 
         {issues.length ? (
           <div className="card grid gap-2">
-            <div className="font-semibold">Checks · {issues.length} to look at</div>
+            <div className="font-semibold">{t("sched.checks", { count: issues.length })}</div>
             {errors.map((x, k) => <Note key={`e${k}`} tone="error">{x.text}</Note>)}
             {warnings.map((x, k) => <Note key={`w${k}`} tone="warn">{x.text}</Note>)}
-            {errors.length ? <div className="caption mt-0">Saving is blocked until the red items are fixed.</div> : null}
+            {errors.length ? <div className="caption mt-0">{t("sched.blocked")}</div> : null}
           </div>
         ) : null}
 
         <div className="card savebar">
           <div className="min-w-48 flex-1">
-            <div className="mb-1 text-sm font-semibold">{needed - filled ? `${filled} of ${needed} filled, ${needed - filled} still open` : `All ${needed} filled`}</div>
-            <Bar pct={needed ? (100 * filled) / needed : 100} label="Filled" />
+            <div className="mb-1 text-sm font-semibold">{needed - filled ? t("sched.progress", { filled, needed, open: needed - filled }) : t("sched.all_filled", { count: needed })}</div>
+            <Bar pct={needed ? (100 * filled) / needed : 100} label={t("common.filled")} />
           </div>
           <div className="btns max-sm:w-full max-sm:flex-nowrap">
-            <button type="button" className="btn primary max-sm:flex-1" onClick={save} disabled={busy || errors.length > 0}><Icon name="save" /> Save schedule</button>
-            {data.snapshot ? <button type="button" className="btn" onClick={() => setConfirm("undo")} disabled={busy}><Icon name="undo" /><span className="max-sm:sr-only">Undo</span></button> : null}
-            {data.saved ? <button type="button" className="btn danger" onClick={() => setConfirm("delete")} disabled={busy}><Icon name="trash" /><span className="max-sm:sr-only">Delete</span></button> : null}
+            <button type="button" className="btn primary max-sm:flex-1" onClick={save} disabled={busy || errors.length > 0}><Icon name="save" /> {t("sched.save")}</button>
+            {data.snapshot ? <button type="button" className="btn" onClick={() => setConfirm("undo")} disabled={busy}><Icon name="undo" /><span className="max-sm:sr-only">{t("common.undo")}</span></button> : null}
+            {data.saved ? <button type="button" className="btn danger" onClick={() => setConfirm("delete")} disabled={busy}><Icon name="trash" /><span className="max-sm:sr-only">{t("common.delete")}</span></button> : null}
           </div>
         </div>
       </div>
       <Confirm open={confirm !== null} busy={busy} onCancel={() => setConfirm(null)} onConfirm={doConfirm}
-        button={confirm === "undo" ? "Undo" : "Delete"}
+        button={confirm === "undo" ? t("common.undo") : t("common.delete")}
         message={confirm === "undo"
-          ? `This puts back ${data.snapshot?.note}, replacing what is saved now for the ${type.toLowerCase()} on ${fmtDate(date)}. Undo can itself be undone.`
-          : `The ${type.toLowerCase()} on ${fmtDate(date)} and everyone assigned to it will be removed. Undo on this page can bring it back.`} />
+          ? t("sched.undo_confirm", { what: data.snapshot?.note ?? "", meeting: t("mt.midweek_lower"), date: fmtDate(date, W) })
+          : t("sched.delete_confirm", { meeting: t("mt.midweek_lower"), date: fmtDate(date, W) })} />
     </>
   );
 }

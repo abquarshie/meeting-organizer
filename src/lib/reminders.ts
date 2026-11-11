@@ -1,42 +1,50 @@
 // Who has a part in the coming days, as one reminder per person, and the same parts as a calendar (.ics) feed.
-// Pure functions, so they can be checked on their own.
-import { HALL_NAMES, MAIN_HALL, MIDWEEK } from "./constants";
-import { longDate } from "./dates";
+// Pure functions, so they can be checked on their own. The wording comes in as ReminderWords, in the slip language
+// (see lib/docWords.ts), since these go to the participants.
+import { MAIN_HALL } from "./constants";
+import { longDate, type DateWords } from "./dates";
 
 export type PartRow = {
   id: number; meeting_date: string; meeting_type: string; part_name: string | null; part_no: number | null;
   student_id: number | null; assistant_id: number | null; person: string | null; assistant: string | null;
-  hall: string; visitor: string | null; role?: string | null; talk_title?: string | null;
+  hall: string; visitor: string | null; role?: string | null;
 };
 
-export type Duty = { rowId: number; date: string; type: string; part: string; hall: string; with: string | null; assisting: boolean };
+export type Duty = { rowId: number; date: string; part: string; hall: string; with: string | null; assisting: boolean };
 export type Reminder = { id: number; name: string; duties: Duty[] };
 
-const meetingWord = (type: string) => (type === MIDWEEK ? "midweek meeting" : "weekend meeting");
-// Parts that carry a theme, and the name to show before it: "Public Talk - Why Fear the True God".
-const THEMED: Record<string, string> = {
-  "Public Talk": "Public Talk", "Treasures Talk": "Treasures Talk", "Living Part": "Living as Christians",
-  "Student Talk": "Talk",
+export type ReminderWords = {
+  dates: DateWords;
+  meeting: string; // "midweek meeting"
+  halls: Record<string, string>;
+  themed: Record<string, string>; // role -> the name shown before a part's theme
+  aPart: string; aStudent: string;
+  hello: (name: string) => string;
+  intro: (many: boolean, congregation: string) => string;
+  line: (date: string, meeting: string, parts: string) => string;
+  youHave: (part: string) => string;
+  withAssisting: (name: string) => string;
+  assisting: (name: string, part: string) => string;
+  thanks: string;
+  calTitle: (name: string) => string;
+  calAssisting: (name: string, part: string) => string;
+  calDescription: (meeting: string, congregation: string, part: string) => string;
+  kingdomHall: string;
 };
-const PUBLIC_TALK = "Public Talk";
+
 const bare = (s: string) => s.trim().replace(/^[“"‘']+|[”"’']+$/g, "").trim();
 
-/** The part's name, with its theme when it has one. Midweek themes are the workbook titles; the public talk's is
- *  the talk title saved on the weekend meeting. */
-export function partName(r: Pick<PartRow, "part_name" | "role" | "talk_title">): string {
+/** The part's name, with its theme when it has one: "Treasures Talk - Jehovah Cares for You". */
+export function partName(r: Pick<PartRow, "part_name" | "role">, W: Pick<ReminderWords, "themed" | "aPart">): string {
   const title = (r.part_name ?? "").trim();
-  const label = r.role ? THEMED[r.role] : undefined;
-  if (r.role === PUBLIC_TALK) {
-    const theme = bare(r.talk_title ?? "");
-    return theme ? `${PUBLIC_TALK} - ${theme}` : PUBLIC_TALK;
-  }
+  const label = r.role ? W.themed[r.role] : undefined;
   if (label && title && !title.toLowerCase().includes(label.toLowerCase())) return `${label} - ${bare(title)}`;
-  return title || "a part";
+  return title || W.aPart;
 }
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name;
 
-/** Everyone with a part or assisting in the rows given, earliest first. Visiting speakers are left out. */
-export function remindersFrom(rows: PartRow[]): Reminder[] {
+/** Everyone with a part or assisting in the rows given, earliest first. */
+export function remindersFrom(rows: PartRow[], W: Pick<ReminderWords, "themed" | "aPart">): Reminder[] {
   const by = new Map<number, Reminder>();
   const add = (id: number | null, name: string | null, d: Duty) => {
     if (!id || !name) return;
@@ -46,7 +54,7 @@ export function remindersFrom(rows: PartRow[]): Reminder[] {
   };
   for (const r of rows) {
     if (r.visitor) continue;
-    const base = { rowId: r.id, date: r.meeting_date, type: r.meeting_type, part: partName(r), hall: r.hall || MAIN_HALL };
+    const base = { rowId: r.id, date: r.meeting_date, part: partName(r, W), hall: r.hall || MAIN_HALL };
     add(r.student_id, r.person, { ...base, with: r.assistant, assisting: false });
     add(r.assistant_id, r.assistant, { ...base, with: r.person, assisting: true });
   }
@@ -54,23 +62,20 @@ export function remindersFrom(rows: PartRow[]): Reminder[] {
   return [...by.values()].sort((a, b) => a.duties[0].date.localeCompare(b.duties[0].date) || a.name.localeCompare(b.name));
 }
 
-function dutyLine(d: Duty): string {
-  const hall = d.hall !== MAIN_HALL ? ` (${HALL_NAMES[d.hall] ?? d.hall})` : "";
-  if (d.assisting) return `you are assisting ${d.with ?? "a student"} with "${d.part}"${hall}`;
-  return `you have "${d.part}"${hall}${d.with ? `, with ${d.with} assisting` : ""}`;
+function dutyLine(d: Duty, W: ReminderWords): string {
+  const hall = d.hall !== MAIN_HALL ? ` (${W.halls[d.hall] ?? d.hall})` : "";
+  if (d.assisting) return `${W.assisting(d.with ?? W.aStudent, d.part)}${hall}`;
+  return `${W.youHave(d.part)}${hall}${d.with ? W.withAssisting(d.with) : ""}`;
 }
 
 /** The WhatsApp message for one person. */
-export function reminderText(r: Reminder, congregation: string): string {
-  const byMeeting = new Map<string, Duty[]>();
-  for (const d of r.duties) byMeeting.set(`${d.date}|${d.type}`, [...(byMeeting.get(`${d.date}|${d.type}`) ?? []), d]);
-  const lines = [...byMeeting.values()].map((ds) =>
-    `• ${longDate(ds[0].date)}, ${meetingWord(ds[0].type)}: ${ds.map(dutyLine).join("; ")}.`);
-  return [`Hello ${firstName(r.name)} 👋`, "", `A reminder of your assignment${r.duties.length > 1 ? "s" : ""}${congregation ? ` at ${congregation}` : ""}:`,
-    ...lines, "", "Thank you, and please let us know quickly if you can't make it."].join("\n");
+export function reminderText(r: Reminder, congregation: string, W: ReminderWords): string {
+  const byDate = new Map<string, Duty[]>();
+  for (const d of r.duties) byDate.set(d.date, [...(byDate.get(d.date) ?? []), d]);
+  const lines = [...byDate.values()].map((ds) =>
+    W.line(longDate(ds[0].date, W.dates), W.meeting, ds.map((d) => dutyLine(d, W)).join("; ")));
+  return [W.hello(firstName(r.name)), "", W.intro(r.duties.length > 1, congregation), ...lines, "", W.thanks].join("\n");
 }
-
-const KINGDOM_HALL = "Kingdom Hall";
 
 // ---- calendar -------------------------------------------------------------------------------------------------------
 
@@ -85,9 +90,9 @@ export function parseTime(text: string | null | undefined): [number, number] | n
   return h < 24 && min < 60 ? [h, min] : null;
 }
 
-const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/;/g, "\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
 const two = (n: number) => String(n).padStart(2, "0");
-/** Long lines folded at 75 octets (RFC 5545), counting bytes so Ga letters aren't split badly. */
+/** Long lines folded at 75 octets (RFC 5545), counting bytes so ɛ and ɔ aren't split badly. */
 function fold(line: string): string {
   const out: string[] = [];
   let cur = "", bytes = 0;
@@ -101,24 +106,25 @@ function fold(line: string): string {
 }
 
 /** One person's parts as an iCalendar feed. Times are local Ghana time (UTC, all year), so they're written in UTC. */
-export function calendar(r: Reminder | null, name: string, opts: { midweek: string; weekend: string; congregation: string }): string {
+export function calendar(r: Reminder | null, name: string, opts: { time: string; congregation: string }, W: ReminderWords): string {
   const stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
-  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Meeting Scheduler//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
-    `X-WR-CALNAME:${esc(`Meeting assignments: ${name}`)}`, "X-WR-TIMEZONE:Africa/Accra", "REFRESH-INTERVAL;VALUE=DURATION:PT12H"];
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Meeting Organizer//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    `X-WR-CALNAME:${esc(W.calTitle(name))}`, "X-WR-TIMEZONE:Africa/Accra", "REFRESH-INTERVAL;VALUE=DURATION:PT12H"];
+  const t = parseTime(opts.time);
+  const meeting = W.meeting ? W.meeting[0].toUpperCase() + W.meeting.slice(1) : "";
   for (const d of r?.duties ?? []) {
     const day = d.date.replace(/-/g, "");
-    const t = parseTime(d.type === MIDWEEK ? opts.midweek : opts.weekend);
-    lines.push("BEGIN:VEVENT", `UID:ms-${d.rowId}-${d.assisting ? "a" : "p"}@meeting-scheduler`, `DTSTAMP:${stamp}`);
+    lines.push("BEGIN:VEVENT", `UID:mo-${d.rowId}-${d.assisting ? "a" : "p"}@meeting-organizer`, `DTSTAMP:${stamp}`);
     if (t) {
       const end = t[0] * 60 + t[1] + 105; // a meeting is about 1 h 45
       lines.push(`DTSTART:${day}T${two(t[0])}${two(t[1])}00Z`, `DTEND:${day}T${two(Math.floor(end / 60) % 24)}${two(end % 60)}00Z`);
     } else {
       lines.push(`DTSTART;VALUE=DATE:${day}`);
     }
-    const summary = d.assisting ? `Assisting ${d.with ?? ""}: ${d.part}` : d.part;
+    const summary = d.assisting ? W.calAssisting(d.with ?? "", d.part) : d.part;
     lines.push(`SUMMARY:${esc(summary.trim())}`,
-      `DESCRIPTION:${esc(`${meetingWord(d.type)[0].toUpperCase()}${meetingWord(d.type).slice(1)}${opts.congregation ? `, ${opts.congregation}` : ""}: ${dutyLine(d)}.`)}`);
-    lines.push(`LOCATION:${esc(KINGDOM_HALL)}`);
+      `DESCRIPTION:${esc(W.calDescription(meeting, opts.congregation ? `, ${opts.congregation}` : "", dutyLine(d, W)))}`);
+    lines.push(`LOCATION:${esc(W.kingdomHall)}`);
     // a nudge the evening before
     lines.push("BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${esc(summary.trim())}`, "TRIGGER:-PT18H", "END:VALARM", "END:VEVENT");
   }

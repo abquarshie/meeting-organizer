@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useRef, type ReactNode } from "react";
+import { useTranslations } from "next-intl";
 import { Icon } from "./icons";
 
 /** A pop-up: a centred card on wide screens, a sheet from the bottom on phones. */
 export function Sheet({ open, onClose, title, children }: {
   open: boolean; onClose: () => void; title: string; children: ReactNode;
 }) {
+  const t = useTranslations("common");
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const d = ref.current;
@@ -20,7 +22,7 @@ export function Sheet({ open, onClose, title, children }: {
         <div className="sheet-body">
           <div className="sheet-head">
             <h2>{title}</h2>
-            <button type="button" className="btn ghost" onClick={onClose} aria-label="Close"><Icon name="close" /></button>
+            <button type="button" className="btn ghost" onClick={onClose} aria-label={t("close")}><Icon name="close" /></button>
           </div>
           {children}
         </div>
@@ -30,15 +32,16 @@ export function Sheet({ open, onClose, title, children }: {
 }
 
 /** "Delete X? You can undo this straight after." with Cancel and a button to go ahead. */
-export function Confirm({ open, message, button = "Delete", onCancel, onConfirm, busy }: {
+export function Confirm({ open, message, button, onCancel, onConfirm, busy }: {
   open: boolean; message: ReactNode; button?: string; onCancel: () => void; onConfirm: () => void; busy?: boolean;
 }) {
+  const t = useTranslations("common");
   return (
-    <Sheet open={open} onClose={onCancel} title="Please confirm">
+    <Sheet open={open} onClose={onCancel} title={t("confirm")}>
       <p style={{ marginTop: 0 }}>{message}</p>
       <div className="btns" style={{ justifyContent: "flex-end" }}>
-        <button type="button" className="btn" onClick={onCancel}>Cancel</button>
-        <button type="button" className="btn primary" onClick={onConfirm} disabled={busy}>{button}</button>
+        <button type="button" className="btn" onClick={onCancel}>{t("cancel")}</button>
+        <button type="button" className="btn primary" onClick={onConfirm} disabled={busy}>{button ?? t("delete")}</button>
       </div>
     </Sheet>
   );

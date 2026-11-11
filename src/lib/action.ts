@@ -1,6 +1,7 @@
 import "server-only";
 import { revalidatePath } from "next/cache";
-import { requireUser, roleOf } from "./auth";
+import { getTranslations } from "next-intl/server";
+import { requireSignIn } from "./auth";
 import { prisma, type Tx } from "./db";
 
 export type Result = { ok: true; message: string } | { ok: false; error: string };
@@ -8,8 +9,10 @@ export type Result = { ok: true; message: string } | { ok: false; error: string 
 export class Refusal extends Error {}
 
 /** Server actions can be called with anything, so ids from the page are checked before they reach a query. */
-export function needId(id: unknown): number {
-  if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0) throw new Refusal("That record wasn't found. Reload the page and try again.");
+export async function needId(id: unknown): Promise<number> {
+  if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0) {
+    throw new Refusal((await getTranslations("people"))("not_found"));
+  }
   return id;
 }
 
@@ -23,34 +26,29 @@ export function ok(message: string): Result {
   return { ok: true, message };
 }
 
-/** Runs a server action's work as the signed-in person, turning a refusal or a database error into a message.
- *  attemptFull is the same for work a weekend-only user can't do (participants and app settings). */
-export async function attempt(work: (user: string) => Promise<Result>, full = false): Promise<Result> {
+/** Runs a server action's work once the sign-in is checked, turning a refusal or a database error into a message. */
+export async function attempt(work: () => Promise<Result>): Promise<Result> {
   try {
-    const user = await requireUser();
-    if (full && roleOf(user) === "weekend") throw new Refusal("Your sign-in covers the weekend meeting only.");
-    return await work(user);
+    await requireSignIn();
+    return await work();
   } catch (e) {
     if (e instanceof Refusal) return { ok: false, error: e.message };
     const digest = (e as { digest?: string })?.digest;
     if (typeof digest === "string" && digest.startsWith("NEXT_REDIRECT")) throw e; // signed out: let it redirect
     console.error(e);
-    return { ok: false, error: "That didn't save. Please try again; if it keeps happening, the database may be unreachable." };
+    return { ok: false, error: (await getTranslations("err"))("not_saved") };
   }
 }
 
-export function attemptFull(work: (user: string) => Promise<Result>): Promise<Result> {
-  return attempt(work, true);
-}
-
-/** A line in the change log, in the same table and format as db.log_change. */
-export async function logChange(user: string, action: string, details = "", tx: Tx | typeof prisma = prisma) {
+/** A line in the change log, in the same table and format as db.log_change. The action is written in the app
+ *  language at the time of the change. */
+export async function logChange(action: string, details = "", tx: Tx | typeof prisma = prisma) {
   const ts = new Date().toISOString().slice(0, 19); // isoformat(timespec="seconds"), server time (UTC)
-  await tx.audit_log.create({ data: { ts, user, action, details } });
+  await tx.audit_log.create({ data: { ts, action, details } });
 }
 
-export async function gaOn(tx: Tx | typeof prisma = prisma): Promise<boolean> {
-  const row = await tx.settings.findUnique({ where: { key: "ga_convert" } });
+export async function convertOn(tx: Tx | typeof prisma = prisma): Promise<boolean> {
+  const row = await tx.settings.findUnique({ where: { key: "letter_convert" } });
   return row?.value === "1";
 }
 

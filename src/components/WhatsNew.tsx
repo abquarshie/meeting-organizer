@@ -1,5 +1,8 @@
 "use client";
+import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
+import { dateWords } from "@/lib/dateWords";
+import { fmtDate } from "@/lib/dates";
 import { NEWS, type News } from "@/lib/whats-new";
 
 const SEEN = "whats-new-seen";
@@ -13,6 +16,10 @@ export function WhatsNew() {
   const ref = useRef<HTMLDialogElement>(null);
   const [show, setShow] = useState<News[]>([]);
   const latest = NEWS[0]?.id ?? 0;
+  const t = useTranslations();
+  const locale = useLocale();
+  const W = dateWords(t);
+  const text = (n: News) => (locale === "ada" && n.ada?.title ? n.ada : n.en);
 
   useEffect(() => {
     let seen: number | null = null;
@@ -39,29 +46,26 @@ export function WhatsNew() {
 
   if (!show.length) return null;
   return (
-    <dialog ref={ref} className="sheet" aria-label="What's new" onClose={done}
+    <dialog ref={ref} className="sheet" aria-label={t("whatsnew.title")} onClose={done}
       onClick={(e) => { if (e.target === ref.current) done(); }}>
       <div className="sheet-body">
-        <div className="sheet-head"><h2 className="m-0 text-lg font-bold">✨ What&apos;s new</h2></div>
+        <div className="sheet-head"><h2 className="m-0 text-lg font-bold">{t("whatsnew.title")}</h2></div>
         <div className="grid gap-4">
           {show.map((n) => (
             <section key={n.id} className="grid gap-1.5">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                <h3 className="m-0 text-[15px] font-semibold">{n.title}</h3>
-                <span className="text-xs text-muted">{dateLabel(n.date)}</span>
+                <h3 className="m-0 text-[15px] font-semibold">{text(n).title}</h3>
+                <span className="text-xs text-muted">{fmtDate(n.date, W)}</span>
               </div>
               <ul className="m-0 grid list-disc gap-1 pl-5 text-sm">
-                {n.items.map((it) => <li key={it}>{it}</li>)}
+                {text(n).items.map((it) => <li key={it}>{it}</li>)}
               </ul>
             </section>
           ))}
         </div>
-        <button type="button" className="btn primary mt-5 w-full" onClick={done} autoFocus>Got it</button>
+        <button type="button" className="btn primary mt-5 w-full" onClick={done} autoFocus>{t("common.got_it")}</button>
       </div>
     </dialog>
   );
 }
 
-function dateLabel(iso: string) {
-  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-}

@@ -1,23 +1,31 @@
 import type { Metadata, Viewport } from "next";
+import { NextIntlClientProvider } from "next-intl";
+import { getLocale, getTranslations } from "next-intl/server";
 import "@fontsource-variable/inter/wght.css"; // self-hosted, so no request to Google and no layout shift
 import { Toaster } from "@/components/Toaster";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: { default: "Meeting Scheduler", template: "%s · Meeting Scheduler" },
-  description: "Midweek and weekend assignments, S-89 slips and the S-140",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("app");
+  return {
+    title: { default: t("name"), template: `%s · ${t("name")}` },
+    description: t("description"),
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width", initialScale: 1, viewportFit: "cover",
-  themeColor: [{ media: "(prefers-color-scheme: light)", color: "#F6F7F9" },
-    { media: "(prefers-color-scheme: dark)", color: "#0F1620" }],
+  themeColor: [{ media: "(prefers-color-scheme: light)", color: "#F7F4F9" },
+    { media: "(prefers-color-scheme: dark)", color: "#120C17" }],
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const locale = await getLocale();
   return (
-    <html lang="en-GB">
-      <body><Toaster>{children}</Toaster></body>
+    <html lang={locale === "ada" ? "ada" : "en-GB"}>
+      <body>
+        <NextIntlClientProvider><Toaster>{children}</Toaster></NextIntlClientProvider>
+      </body>
     </html>
   );
 }

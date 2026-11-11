@@ -1,26 +1,26 @@
 @import "tailwindcss";
 
-/* Design tokens. Plum and marigold: the plum of the app icon and the printed sheets, with marigold as the one warm
- * accent (the main button on the hero card, a marker beside the open page, the edge of the save bar). Pages use Tailwind utilities
- * (bg-surface, text-muted…); the building blocks repeated on every form (buttons, inputs, cards, tables) are named
- * classes below. Change the look here and nowhere else. */
+/* Design tokens. Quiet greys with a muted plum for the brand (buttons, links, the open page), and no other colour
+ * except where it means something: the workbook's three section colours, and ok / warning / error. Pages use Tailwind
+ * utilities (bg-surface, text-muted…); the building blocks repeated on every form (buttons, inputs, cards, tables) are
+ * named classes below. Change the look here and nowhere else. */
 :root {
-  --bg: #f7f4f9; --surface: #ffffff; --subtle: #f1ecf4; --line: #e6dfec; --line-strong: #d3c8dc;
-  --ink: #1d1424; --muted: #66597a; --faint: #958aa3;
-  --brand: #6b2f8f; --brand-ink: #5e2780; --brand-soft: #f1e8f7; --on-brand: #ffffff;
-  --accent: #e0a526; --accent-ink: #8a5a00; --accent-soft: #fcf1d9; --on-accent: #2a1a00;
-  --hero-a: #3a1650; --hero-b: #6b2f8f;
-  --ok: #17804d; --ok-soft: #e3f5eb; --bad: #c43a3a; --bad-soft: #fdecec; --warn: #9a5b00; --warn-soft: #fdf2e0;
+  --bg: #f6f5f7; --surface: #ffffff; --subtle: #f0eef2; --line: #e4e1e8; --line-strong: #cfcbd5;
+  --ink: #1c1a1f; --muted: #625d69; --faint: #938e99;
+  --brand: #5a4569; --brand-ink: #4c3a59; --brand-soft: #efebf2; --on-brand: #ffffff;
+  --accent: #b8954f; --accent-ink: #7a5f2a; --accent-soft: #f5efe3; --on-accent: #241c0c;
+  --hero-a: #2b2630; --hero-b: #463b50;
+  --ok: #2f7a52; --ok-soft: #e6f2eb; --bad: #b5443f; --bad-soft: #f9ecec; --warn: #8f5f14; --warn-soft: #f8f0e2;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #120c17; --surface: #1b1322; --subtle: #22182b; --line: #33263f; --line-strong: #463655;
-    --ink: #ede6f2; --muted: #a99bb8; --faint: #7a6c8a;
-    --brand: #a56fd0; --brand-ink: #cfa8ee; --brand-soft: #2c1a3c; --on-brand: #1b0d26;
-    --accent: #f2c14e; --accent-ink: #f6d27e; --accent-soft: #3a2a0c; --on-accent: #2a1a00;
-    --hero-a: #2a1239; --hero-b: #55257a;
-    --ok: #4ade80; --ok-soft: #10291b; --bad: #f87171; --bad-soft: #351618; --warn: #fbbf24; --warn-soft: #33260c;
+    --bg: #131215; --surface: #1b1a1e; --subtle: #222126; --line: #2f2d34; --line-strong: #403d47;
+    --ink: #ecebee; --muted: #a5a0ab; --faint: #75707c;
+    --brand: #b39cc6; --brand-ink: #cbbad9; --brand-soft: #2a2430; --on-brand: #17141a;
+    --accent: #d2b67c; --accent-ink: #e0cb9f; --accent-soft: #2f2818; --on-accent: #1d170a;
+    --hero-a: #1e1b22; --hero-b: #3a3042;
+    --ok: #6fcf97; --ok-soft: #15261c; --bad: #ef8a85; --bad-soft: #321b1b; --warn: #e2b866; --warn-soft: #2e2512;
     color-scheme: dark;
   }
 }
@@ -98,11 +98,11 @@
   /* ---- the hero card at the top of Home ---- */
   .hero { @apply relative isolate overflow-hidden rounded-3xl p-5 text-white shadow-lift md:p-8;
     background: radial-gradient(120% 140% at 100% 0%, var(--hero-b) 0%, var(--hero-a) 60%); }
-  .hero::before { content: ""; @apply absolute inset-0 -z-10 opacity-[.18];
+  .hero::before { content: ""; @apply absolute inset-0 -z-10 opacity-[.08];
     background-image: radial-gradient(rgb(255 255 255 / .55) 1px, transparent 1px); background-size: 18px 18px;
     mask-image: linear-gradient(110deg, transparent 35%, #000 100%); }
   .hero .btn { @apply border-white/20 bg-white/10 text-white hover:bg-white/20; }
-  .hero .btn.primary { @apply border-accent bg-accent text-on-accent hover:bg-accent hover:brightness-105; }
+  .hero .btn.primary { @apply border-white bg-white text-[#2b2630] hover:bg-white/90 hover:brightness-100; }
   .hero-bar { @apply h-1.5 w-full min-w-12 overflow-hidden rounded-full bg-white/15; }
   .hero-bar > div { @apply h-full rounded-full; }
 
@@ -199,7 +199,7 @@
   /* ---- progress ---- */
   .bar { @apply h-1.5 w-full min-w-12 overflow-hidden rounded-full bg-subtle; }
   .fill { @apply h-full rounded-full bg-brand transition-[width] duration-300; }
-  .savebar { @apply sticky bottom-3 z-20 flex flex-wrap items-center gap-3 border-accent/70 bg-surface/95 shadow-lift backdrop-blur max-md:bottom-[4.75rem] max-md:gap-2 max-md:p-3; }
+  .savebar { @apply sticky bottom-3 z-20 flex flex-wrap items-center gap-3 border-line-strong bg-surface/95 shadow-lift backdrop-blur max-md:bottom-[4.75rem] max-md:gap-2 max-md:p-3; }
   .savebar .btn { @apply max-md:min-h-9 max-md:px-3; }
 
   /* ---- the schedule editor ---- */
@@ -212,7 +212,7 @@
   .swatch { @apply inline-block size-2.5 flex-none rounded-full; }
 
   /* ---- app frame ---- */
-  .nav-link { @apply flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-muted no-underline transition-colors hover:bg-subtle hover:text-ink aria-[current=page]:bg-brand-soft aria-[current=page]:font-semibold aria-[current=page]:text-brand-ink aria-[current=page]:shadow-[inset_3px_0_0_var(--accent)] [&_svg]:size-[19px]; }
+  .nav-link { @apply flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-muted no-underline transition-colors hover:bg-subtle hover:text-ink aria-[current=page]:bg-brand-soft aria-[current=page]:font-semibold aria-[current=page]:text-brand-ink [&_svg]:size-[19px]; }
 }
 
 @keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } }

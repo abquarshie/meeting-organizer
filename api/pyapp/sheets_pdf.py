@@ -101,7 +101,7 @@ def section_titles(language):
     return {name: section_label(name, locale) for name in ("Opening", "Treasures", "Ministry", "Living", "Closing")}
 
 
-ACCENT = colors.HexColor("#6B2F8F")          # the app's plum
+ACCENT = colors.HexColor("#5A4569")          # the app's muted plum
 MUTED = colors.HexColor("#6B7683")
 RULE = colors.HexColor("#D7DBE0")
 

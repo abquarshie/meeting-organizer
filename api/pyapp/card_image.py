@@ -41,16 +41,16 @@ def S(v):
 
 
 # -------------------------------------------------------------------- palette
-INK = (29, 20, 36)
-MUTED = (110, 98, 120)
-FAINT = (156, 146, 166)
-PAPER = (247, 244, 249)
+INK = (28, 26, 31)
+MUTED = (98, 93, 105)
+FAINT = (147, 142, 153)
+PAPER = (246, 245, 247)
 CARD = (255, 255, 255)
-RULE = (230, 223, 236)
-HEAD_TOP = (58, 22, 80)        # header gradient, the app's plum
-HEAD_BOTTOM = (107, 47, 143)
-ACCENT = (107, 47, 143)
-MARIGOLD = (224, 165, 38)
+RULE = (228, 225, 232)
+HEAD_TOP = (43, 38, 48)        # header gradient: the app's dark grey with a touch of plum
+HEAD_BOTTOM = (70, 59, 80)
+ACCENT = (90, 69, 105)         # the app's muted plum
+MARIGOLD = (184, 149, 79)
 SECTION = {                    # the workbook's own section colours
     "Opening": (138, 148, 160), "Treasures": (91, 103, 112),
     "Ministry": (183, 130, 31), "Living": (142, 42, 42),

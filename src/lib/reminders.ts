@@ -7,7 +7,7 @@ import { longDate, type DateWords } from "./dates";
 export type PartRow = {
   id: number; meeting_date: string; meeting_type: string; part_name: string | null; part_no: number | null;
   student_id: number | null; assistant_id: number | null; person: string | null; assistant: string | null;
-  hall: string; visitor: string | null; role?: string | null;
+  hall: string; role?: string | null;
 };
 
 export type Duty = { rowId: number; date: string; part: string; hall: string; with: string | null; assisting: boolean };
@@ -53,7 +53,6 @@ export function remindersFrom(rows: PartRow[], W: Pick<ReminderWords, "themed" |
     by.set(id, r);
   };
   for (const r of rows) {
-    if (r.visitor) continue;
     const base = { rowId: r.id, date: r.meeting_date, part: partName(r, W), hall: r.hall || MAIN_HALL };
     add(r.student_id, r.person, { ...base, with: r.assistant, assisting: false });
     add(r.assistant_id, r.assistant, { ...base, with: r.person, assisting: true });

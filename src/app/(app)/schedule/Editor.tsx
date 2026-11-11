@@ -1,5 +1,5 @@
 "use client";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
@@ -49,6 +49,7 @@ export function Editor({ date, mode, saved }: {
 }) {
   const type = MIDWEEK;
   const t = useTranslations();
+  const locale = useLocale();
   const W = dateWords(t);
   const router = useRouter();
   const [busy, act] = useAct();
@@ -150,7 +151,7 @@ export function Editor({ date, mode, saved }: {
         {header}
         <div className="card">
           <h2 className="mt-0 text-lg font-bold">{data.event}</h2>
-          {data.eventOther ? <div className="text-sm text-muted">{t("sched.in_other_language", { language: t("lang.dangme") })} {data.eventOther}</div> : null}
+          {data.eventOther ? <div className="text-sm text-muted">{t("sched.in_other_language", { language: t(locale === "ada" ? "lang.english" : "lang.dangme") })} {data.eventOther}</div> : null}
           <p>{t("sched.event_week")}</p>
           <div className="caption">{t("sched.event_undo")}</div>
         </div>

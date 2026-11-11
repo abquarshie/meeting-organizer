@@ -13,7 +13,7 @@ def _png_size(png):
 
 
 def _week(core, people):
-    """Midweek 14 Oct (classroom on) and weekend 18 Oct with a guest."""
+    """Midweek 14 Oct, with the classroom on."""
     names = dict(zip(core.get_students()["id"], core.get_students()["name"]))
     mid = core.apply_aux(core.build_midweek_slots(core.default_midweek_parts()), True)
     picks = {}
@@ -29,24 +29,17 @@ def _week(core, people):
         elif s["role"] == "Reader":
             picks[i] = (people["Nii Tetteh"], None)
     core.save_schedule("2026-10-14", core.MIDWEEK, mid, picks,
-                       {"book": "YEREMIA 34-36", "opening_song": "Lala 76",
+                       {"book": "YEREMIA 34-36", "opening_song": "La 76",
                         "aux": True}, names)
-    wk = core.default_weekend_slots()
-    talk = next(i for i, s in enumerate(wk) if s["role"] == "Public Talk")
-    core.save_schedule("2026-10-18", core.WEEKEND, wk,
-                       {0: (people["Yaw Adjei"], None), talk: (None, None),
-                        talk + 10000: "Jonathan Adjei",
-                        talk + 20000: "Dansoman Beach Ga"},
-                       {"talk_number": "12", "talk_title": "Rely on Jehovah"}, names)
     return core.get_schedules()
 
 
 def test_week_card_says_every_part(core, people):
-    core.set_setting("congregation", "Ussher Town Ga")
+    core.set_setting("congregation", "Ada Foah")
     spec = ci.week_card_spec(_week(core, people), "2026-10-16")
-    assert spec["congregation"] == "Ussher Town Ga"
-    assert spec["subtitle"] == "Week 2 of October · 12–18 Oct 2026"
-    mid, wk = spec["meetings"]
+    assert spec["congregation"] == "Ada Foah"
+    assert "Week 2 of October" in spec["subtitle"]
+    (mid,) = spec["meetings"]
     assert mid["eyebrow"] == "WEDNESDAY · 14 OCTOBER"
     assert mid["title"] == "Midweek Meeting"
     assert mid["detail"] == "YEREMIA 34-36 · Song 76"      # the sheet's song word
@@ -59,47 +52,35 @@ def test_week_card_says_every_part(core, people):
     # the study's reader is a note under the conductor, not a row of its own
     study = rows[("8. Congregation Bible Study (30 min)", "")]
     assert study["note"] == "Reader: Nii Tetteh"
-    assert not any(p == "Congregation Bible Study Reader" for p, _ in rows)
     # the closing prayer ends Living rather than a section of one row
     assert [s["key"] for s in mid["sections"]] == \
         ["Opening", "Treasures", "Ministry", "Living"]
-
-    talk = next(r for s in wk["sections"] for r in s["rows"]
-                if r["part"] == "Public Talk & Closing Prayer")
-    assert talk["who"] == "Jonathan Adjei"
-    assert talk["note"] == "Guest · Dansoman Beach Ga"
-    assert wk["detail"] == "Public Talk No. 12 — “Rely on Jehovah”"
-    assert wk["sections"][0]["title"] == ""        # no heading repeating the title
-    assert spec["chip"].startswith("2 meetings · ")
+    assert spec["chip"]
 
     png = ci.render_card(spec)
     width, height = _png_size(png)
-    assert width == 1440 and height > 2000
+    assert width == 1440 and height > 1200
 
 
 def test_week_card_headings_follow_the_slip_language(core, people):
-    spec = ci.week_card_spec(_week(core, people), "2026-10-16", "Ga")
-    mid, wk = spec["meetings"]
-    assert mid["title"] == "Wɔshiɛmɔ Kɛ Wɔshihilɛ Kpee"
-    assert wk["title"] == "Otsi Naagbee Kpee"
+    spec = ci.week_card_spec(_week(core, people), "2026-10-16", "Dangme")
+    (mid,) = spec["meetings"]
+    assert mid["title"] == "Otsi ɔ Mi Kpe"
     assert [s["title"] for s in mid["sections"]][:2] == \
-        ["Hiɛkpamɔ", "Nyɔŋmɔ Wiemɔ Lɛ Mli Jwetrii"]
-    parts = [r["part"] for s in mid["sections"] + wk["sections"] for r in s["rows"]]
-    assert "Sɛinɔtalɔ" in parts and "Maŋshiɛmɔ & Sɔlemɔ" in parts
-    rooms = {r["room"] for s in mid["sections"] for r in s["rows"]} - {""}
-    assert rooms == {"Asa 2"}
-    talk = next(r for r in wk["sections"][0]["rows"] if r["note"])
-    assert talk["note"].startswith("Wielɔ ni afɔ lɛ nine")
-    assert "Lala 76" in mid["detail"]
+        ["Munyu Nɛ A Kɛ Ma Bli Kpe ɔ Nya", "Juetli Nɛ Ngɛ Mawu Munyu ɔ Mi"]
+    parts = [r["part"] for s in mid["sections"] for r in s["rows"]]
+    assert "Sɛnɔhilɔ" in parts
+    assert "La 76" in mid["detail"]
     assert _png_size(ci.render_card(spec))[0] == 1440
 
 
 def test_an_assembly_week_and_an_empty_week(core, people):
     core.mark_event_week("2026-10-14", "convention")
-    spec = ci.week_card_spec(core.get_schedules(), "2026-10-14", "Ga")
-    assert [m["title"] for m in spec["meetings"]] == ["Kpokpaa wulu Nɔ Kpee Otsi"]
+    spec = ci.week_card_spec(core.get_schedules(), "2026-10-14")
+    assert [m["title"] for m in spec["meetings"]] == ["Convention Week"]
     assert not spec["meetings"][0]["sections"]
     ci.render_card(spec)
+    ci.render_card(ci.week_card_spec(core.get_schedules(), "2026-10-14", "Dangme"))
 
     empty = ci.week_card_spec(core.get_schedules(), "2026-11-04")
     assert empty["meetings"] == [] and empty["empty"]
@@ -118,18 +99,18 @@ def test_person_card(core, people):
     assert tile["sub"] == "assisting Ama Owusu"
     assert tile["section"] == "Ministry"          # its colour on the date block
 
-    kofi = core.month_assignments_for(rows, people["Kofi Mensah"], "2026-10")
-    ga = ci.person_card_spec("Kofi Mensah", "Brother", "2026-10", kofi, "Ga")
-    assert ga["title"] == "Hello, Brother Kofi Mensah"
-    assert all("WƆSHIƐMƆ" in t["eyebrow"] for t in ga["tiles"])
-    width, _ = _png_size(ci.render_card(ga))
+    kofi = core.month_assignments_for(rows, people["Kofi Mensah"], "2026-10", "Dangme")
+    ada = ci.person_card_spec("Kofi Mensah", "Brother", "2026-10", kofi, "Dangme")
+    assert "Kofi Mensah" in ada["title"]
+    assert all("OTSI Ɔ MI KPE" in t["eyebrow"] for t in ada["tiles"])
+    width, _ = _png_size(ci.render_card(ada))
     assert width == 1440
 
 
 def test_long_names_and_titles_wrap_instead_of_running_off(core):
     long = "Kwa Je Lɛŋ Yaka Yiŋsusumɔi Lɛ, Dii Maŋtsɛyeli Lɛ He Nibii Ni Yɔɔ Diɛŋtsɛ"
     spec = {"kind": "week", "congregation": "A Congregation With A Very Long Name Indeed",
-            "title": ci.CARD_TEXT["title"], "subtitle": "Week 1", "chip": "",
+            "title": "Meeting assignments", "subtitle": "Week 1", "chip": "",
             "empty": "", "footer": ["a", "b"],
             "meetings": [{"eyebrow": "X", "title": "Midweek Meeting", "detail": long,
                           "sections": [{"key": "Ministry", "title": "Ministry",

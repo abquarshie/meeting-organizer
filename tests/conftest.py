@@ -31,7 +31,6 @@ def fresh_db(monkeypatch):
     db._students.clear()
     db._schedules.clear()
     db._assignment_rows.clear()
-    db._talks.clear()
     db._meetings.clear()
     db._unavailable.clear()
     db._lookup.clear()
@@ -67,9 +66,8 @@ def people(core):
     add("Ama Owusu", "Sister", ["Initial Presentation", "Making Disciples",
                                 "Explaining Beliefs"])
     add("Efua Osei", "Sister", ["Initial Presentation", "Making Disciples"])
-    add("Yaw Adjei", "Brother", ["Weekend Chairman", "Prayer", "Watchtower Reader"])
-    add("Nii Tetteh", "Brother", ["Public Talk", "Bible Reading",
-                                  "Chairman"])
+    add("Yaw Adjei", "Brother", ["Prayer", "Reader"])
+    add("Nii Tetteh", "Brother", ["Bible Reading", "Chairman"])
     df = core.get_students()
     return dict(zip(df["name"], df["id"]))
 
@@ -119,6 +117,25 @@ def week_lines(head, book, ministry, tag, headings=True, song="Song"):
     return lines
 
 
+def dangme_week_lines(head, book, ministry, tag):
+    """A week as the Dangme workbook prints it: its own headings, “(Hɛngm. N)” and “La”."""
+    lines = [head, book, "La 76 Kɛ Sɔlemi", "Munyu Nɛ A Kɛ Ma Bli Kpe ɔ Nya (Hɛngm. 1)",
+             "JUETLI NƐ NGƐ", "MAWU MUNYU Ɔ MI",
+             f"1. {tag} Moo Kase Ní (Hɛngm. 10)", "2. Ngmami ɔ Mi Junehi (Hɛngm. 10)",
+             "3. Baiblo Kanemi (Hɛngm. 4)", "MOO BƆ FIƐƐMI", "NÍ TSUMI Ɔ HE MƆDE"]
+    n = 4
+    titles = ["Moo Je Ní Sɛɛmi Sisi", "Kpale Ya Slaa Nihi Nɛ O Kɛ Mɛ Sɛɛ Ní ɔ", "Moo Pee Nihi Kaseli",
+              "Munyu Tumi"]
+    for k in range(ministry):
+        lines.append(f"{n}. {titles[k % len(titles)]} (Hɛngm. {3 + k % 2})")
+        n += 1
+    lines += ["KRISTOFOHI", "A SI HIMI", "La 10", f"{n}. Asafo ɔ Mi Hiami Níhi (Hɛngm. 15)"]
+    n += 1
+    lines += [f"{n}. Asafo Baiblo Mi Ní Kasemi (Hɛngm. 30)",
+              "Munyu Nɛ A Kɛ Maa Mwɔ Kpe ɔ Nya (Hɛngm. 3)", "La 150 Kɛ Sɔlemi"]
+    return lines
+
+
 @pytest.fixture
 def english_workbook(tmp_path):
     return _pdf(tmp_path / "en.pdf", [
@@ -128,14 +145,26 @@ def english_workbook(tmp_path):
 
 
 @pytest.fixture
-def ga_workbook(tmp_path):
+def dangme_workbook(tmp_path):
     font = str(ROOT / "pyapp" / "fonts" / "DejaVuSans.ttf")  # the app's own font has ɛ ɔ ŋ
-    first = week_lines("SƐPTƐMBA 14-20", "YESAIA 60-62", 4, "B", False, "Lala")
-    return _pdf(tmp_path / "ga.pdf", [
-        week_lines("SƐPTƐMBA 7-13", "YESAIA 58-59", 2, "A", False, "Lala"),
+    first = dangme_week_lines("SEPTEMBER 14-20", "YESAIA 60-62", 4, "B")
+    return _pdf(tmp_path / "dangme.pdf", [
+        dangme_week_lines("SEPTEMBER 7-13", "YESAIA 58-59", 2, "A"),
         first[:12], first[12:],  # one week split over two pages
-        week_lines("OKTOBA 5-11", "YESAIA 5-6", 3, "D", False, "Lala"),  # a week skipped
+        dangme_week_lines("OCTOBER 5-11", "YESAIA 5-6", 3, "D"),  # a week skipped
     ], font=font if Path(font).exists() else None)
+
+
+# The forms and the workbook as published, for the tests that use the real thing. They are not part of the
+# repository (the forms belong to their publisher): put copies in tests/forms/ to run those tests.
+FORMS = ROOT / "tests" / "forms"
+
+
+def form(name):
+    path = FORMS / name
+    if not path.exists():
+        pytest.skip(f"put {name} in tests/forms/ to run this test")
+    return path.read_bytes()
 
 
 @pytest.fixture
@@ -150,11 +179,11 @@ def s140_template(tmp_path):
             cell.text = text
 
     for _ in range(5):
-        row(["[ASAFO LƐ GBƐ́I]", "", "", "", ""])
+        row(["[ASAFO Ɔ BIƐ]", "", "", "", ""])
         row(["", "", "", "", ""])
-        row(["[DEETI]", "", "[Gbɛ́i]", "", ""])
+        row(["[DATE]", "", "[Biɛ]", "", ""])
         for i in range(23):
-            row(["0:00", f"[Saneyitso]{i}", "[Gbɛ́i]", "[Gbɛ́i]", "[Gbɛ́i]"])
+            row(["0:00", f"[Munyuyi]{i}", "[Biɛ]", "[Biɛ]", "[Biɛ]"])
     path = tmp_path / "S-140.docx"
     d.save(path)
     return path.read_bytes()

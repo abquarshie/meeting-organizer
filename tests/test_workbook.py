@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import form
+
 
 def test_english_weeks_parts_and_wrapped_titles(core, english_workbook):
     weeks, empty, _ = core.parse_brochure(english_workbook)
@@ -21,30 +23,24 @@ def test_english_weeks_parts_and_wrapped_titles(core, english_workbook):
     assert first["songs"] == ["76", "100"]
 
 
-def test_ga_weeks_split_pages_and_skipped_week(core, ga_workbook):
-    weeks, _, _ = core.parse_brochure(ga_workbook)
-    labels = list(weeks)
-    assert labels == ["SƐPTƐMBA 7–13", "SƐPTƐMBA 14–20", "OKTOBA 5–11"]
-    assert len(weeks["SƐPTƐMBA 14–20"]["parts"]) == 10  # continued on the next page
-    # without English headings the sections are still guessed sensibly
-    parts = weeks["SƐPTƐMBA 14–20"]["parts"]
+def test_dangme_weeks_split_pages_and_skipped_week(core, dangme_workbook):
+    weeks, _, _ = core.parse_brochure(dangme_workbook)
+    assert list(weeks) == ["SEPTEMBER 7–13", "SEPTEMBER 14–20", "OCTOBER 5–11"]
+    parts = weeks["SEPTEMBER 14–20"]["parts"]
+    assert len(parts) == 9                    # continued on the next page
+    # the Dangme headings place the sections
     assert parts[0]["section"] == "Treasures"
     assert parts[3]["section"] == "Ministry"
     assert parts[-1]["role"] == "Bible Study Conductor"
+    assert weeks["SEPTEMBER 14–20"]["songs"][0] == "76"       # "La 76"
 
-    first, sure = core.guess_first_monday(weeks, "mwb_GA_202609.pdf")
+    first, sure = core.guess_first_monday(weeks, "mwb_DG_202609.pdf")
     assert (first, sure) == (date(2026, 9, 7), True)
     core.assign_dates(weeks, first)
-    assert core.week_for_date(weeks, "2026-09-10") == "SƐPTƐMBA 7–13"
-    assert core.week_for_date(weeks, "2026-09-17") == "SƐPTƐMBA 14–20"
+    assert core.week_for_date(weeks, "2026-09-10") == "SEPTEMBER 7–13"
+    assert core.week_for_date(weeks, "2026-09-17") == "SEPTEMBER 14–20"
     assert core.week_for_date(weeks, "2026-10-01") is None  # the skipped week
-    assert core.week_for_date(weeks, "2026-10-08") == "OKTOBA 5–11"
-
-
-def test_guess_without_month_names_is_flagged(core, ga_workbook):
-    weeks, _, _ = core.parse_brochure(ga_workbook)
-    first, sure = core.guess_first_monday(weeks, "workbook.pdf")
-    assert first.weekday() == 0 and first.day == 7 and not sure
+    assert core.week_for_date(weeks, "2026-10-08") == "OCTOBER 5–11"
 
 
 def test_gaps_are_reported(core):
@@ -82,7 +78,7 @@ def test_more_heading_shapes_are_recognised(core):
 
 def test_heading_with_scripture_and_page_number(core):
     """SEPTEMBER 7-13  |  YEREMIA 32-33                    2  — the exact shape
-    printed on the real Ga workbook: a book/chapter reading after the date,
+    printed on the real workbook: a book/chapter reading after the date,
     and a right-aligned page number sharing the same line."""
     from workbook import _heading
     h = _heading("SEPTEMBER 7-13  |  YEREMIA 32-33                          2")
@@ -96,22 +92,23 @@ def test_heading_with_scripture_and_page_number(core):
     assert h3["book"] == ""
 
 
-def test_ga_week_with_min_before_the_number(core):
-    """The real Ga workbook writes '(Min. 10)', not '(10 min.)'."""
+def test_dangme_minutes_are_read(core):
+    """The Dangme workbook writes '(Hɛngm. 10)', not '(10 min.)'."""
     from workbook import _parse_week
-    text = ("1. Jwɛŋmɔ Yehowa Sui\n(Min. 10)\n"
-            "2. Peimɔ Ŋmalɛ (Min. 10)\n"
-            "3. Biblia Kanemɔ (Min. 4)\n"
-            "4. Kɛ Oyaaje (Min. 3)\n"
-            "5. Kɛ Oyaaje (Min. 4)\n"
-            "6. Kɛ Oyaatsa (Min. 5)\n"
-            "7. Kaafɔ Otswerɛi (Min. 15)\n"
-            "8. Asafoŋ Biblia Nikasemɔ (Min. 30)\n")
+    text = ("1. Moo Kase Ní\n(Hɛngm. 10)\n"
+            "2. Ngmami ɔ Mi Junehi (Hɛngm. 10)\n"
+            "3. Baiblo Kanemi (Hɛngm. 4)\n"
+            "4. Moo Je Ní Sɛɛmi Sisi (Hɛngm. 3)\n"
+            "5. Kpale Ya Slaa Nihi Nɛ O Kɛ Mɛ Sɛɛ Ní ɔ (Hɛngm. 4)\n"
+            "6. Moo Pee Nihi Kaseli (Hɛngm. 5)\n"
+            "7. Asafo ɔ Mi Hiami Níhi (Hɛngm. 15)\n"
+            "8. Asafo Baiblo Mi Ní Kasemi (Hɛngm. 30)\n")
     parts, _, gaps = _parse_week(text)
     assert gaps == []
+    assert [p["minutes"] for p in parts] == [10, 10, 4, 3, 4, 5, 15, 30]
     sections = [p["section"] for p in parts]
     assert sections == (["Treasures"] * 3 + ["Ministry"] * 3 + ["Living"] * 2)
-    assert parts[-1]["role"] == "Bible Study Conductor"   # 30 min, no English keyword
+    assert parts[-1]["role"] == "Bible Study Conductor"
 
 
 def test_a_week_can_be_renamed(core, english_workbook):
@@ -126,57 +123,60 @@ def test_a_week_can_be_renamed(core, english_workbook):
     assert after["DEUTERONOMY 24-26"]["start"] == stored[old]["start"]   # dates kept
 
 
-GA_WEEK = """SEPTEMBER 14-20  |  YEREMIA 34-36                     4
+DANGME_WEEK = """NOVEMBER 9-15  YEREMIA 51-52                     4
 
-NYƆŊMƆ WIEMƆ LƐ MLI JWETRII
+JUETLI NƐ NGƐ
+MAWU MUNYU Ɔ MI
 
-1. Jwɛŋmɔ Yehowa Sui Ye Anɔ (Min. 10)
-2. Pɛimɔ Ŋmalɛi Lɛ Amli Jogbaŋŋ (Min. 10)
-3. Biblia Kanemɔ (Min. 4)
+1. Moo Kase Ní Kɛ Je Zedekia Sane ɔ Mi (Hɛngm. 10)
+2. Ngmami ɔ Mi Junehi (Hɛngm. 10)
+3. Baiblo Kanemi (Hɛngm. 4)
 
-KASEMƆ BƆ NI ASHIƐƆ JOGBAŊŊ
+MOO BƆ FIƐƐMI
+NÍ TSUMI Ɔ HE MƆDE
 
-4. Kɛ́ Oyaaje Sanegbaa Shishi (Min. 3)
-5. Kɛ́ Oyaatsa Nɔ (Min. 4)
-6. Mɛni Obaakɛɛ? (Min. 4)
-7. Kɛ́ Oofee Mɛi Kaselɔi (Min. 5)
-8. Gbalamɔ Ohemɔkɛyeli Lɛ Mli (Min. 5)
-9. Wiemɔ (Min. 5)
+4. Moo Je Ní Sɛɛmi Sisi (Hɛngm. 3)
+5. Kpale Ya Slaa Nihi Nɛ O Kɛ Mɛ Sɛɛ Ní ɔ (Hɛngm. 4)
+6. Mɛni O Ma De? (Hɛngm. 4)
+7. Moo Pee Nihi Kaseli (Hɛngm. 5)
+8. Tsɔɔ Níhi Nɛ O Heɔ Yeɔ Mi (Hɛngm. 5)
+9. Munyu Tumi (Hɛngm. 5)
 
-HII SHI AKƐ KRISTOFONYO
+KRISTOFOHI
+A SI HIMI
 
-10. Kaafɔ Otswerɛi Lɛ (Min. 15)
-11. Asafoŋ Biblia Nikasemɔ (Min. 30)
+10. Yemi Kɛ Buamihi Nɛ Wa Haa (Hɛngm. 15)
+11. Asafo Baiblo Mi Ní Kasemi (Hɛngm. 30)
 """
 
 
-def test_ga_titles_get_the_right_roles(core):
-    """Role drives who is eligible and how rotation is tracked. Without the Ga
-    words every ministry part collapsed to Initial Presentation, so anyone whose
-    privilege was Making Disciples or Explaining Beliefs was never offered."""
+def test_dangme_titles_get_the_right_roles(core):
+    """Role drives who is eligible and how rotation is tracked. Without the
+    Dangme words every ministry part would collapse to Initial Presentation."""
     from workbook import _parse_week
-    parts, _, gaps = _parse_week(GA_WEEK)
+    parts, _, gaps = _parse_week(DANGME_WEEK)
     assert gaps == []
     roles = {p["part_no"]: p["role"] for p in parts}
     assert roles == {
         1: "Treasures Talk", 2: "Spiritual Gems", 3: "Bible Reading",
-        4: "Initial Presentation",      # Kɛ́ Oyaaje Sanegbaa Shishi
-        5: "Initial Presentation",      # Kɛ́ Oyaatsa Nɔ — following up
-        6: "Initial Presentation",      # Mɛni Obaakɛɛ?
-        7: "Making Disciples",          # Kɛ́ Oofee Mɛi Kaselɔi
-        8: "Explaining Beliefs",        # Gbalamɔ Ohemɔkɛyeli Lɛ Mli
-        9: "Student Talk",              # Wiemɔ
+        4: "Initial Presentation",      # Moo Je Ní Sɛɛmi Sisi
+        5: "Initial Presentation",      # following up
+        6: "Initial Presentation",      # Mɛni O Ma De?
+        7: "Making Disciples",          # Moo Pee Nihi Kaseli
+        8: "Explaining Beliefs",        # Tsɔɔ Níhi Nɛ O Heɔ Yeɔ Mi
+        9: "Student Talk",              # Munyu Tumi
         10: "Living Part", 11: "Bible Study Conductor",
     }
 
 
-def test_ga_section_headings_are_read_not_guessed(core):
-    """With the Ga headings recognised, sections come from the page."""
+def test_dangme_section_headings_are_read_not_guessed(core):
+    """With the Dangme headings recognised, sections come from the page, even
+    when the heading wraps over two lines as it is printed."""
     from workbook import _parse_week, HEADING_RES
-    assert HEADING_RES["Treasures"].search("NYƆŊMƆ WIEMƆ LƐ MLI JWETRII")
-    assert HEADING_RES["Ministry"].search("KASEMƆ BƆ NI ASHIƐƆ JOGBAŊŊ")
-    assert HEADING_RES["Living"].search("HII SHI AKƐ KRISTOFONYO")
-    parts, _, _ = _parse_week(GA_WEEK)
+    assert HEADING_RES["Treasures"].search("JUETLI NƐ NGƐ MAWU MUNYU Ɔ MI")
+    assert HEADING_RES["Ministry"].search("MOO BƆ FIƐƐMI NÍ TSUMI Ɔ HE MƆDE")
+    assert HEADING_RES["Living"].search("KRISTOFOHI A SI HIMI")
+    parts, _, _ = _parse_week(DANGME_WEEK)
     sections = {p["part_no"]: p["section"] for p in parts}
     # part 9 is a 5-minute part AFTER the ministry section: guessing from
     # numbers and durations alone could not place it reliably
@@ -184,11 +184,11 @@ def test_ga_section_headings_are_read_not_guessed(core):
 
 
 def test_section_heading_split_over_two_lines(core):
-    """The printed heading wraps: "HII SHI AKƐ" / "KRISTOFONYO". Missing it is
+    """The printed heading wraps: "KRISTOFOHI" / "A SI HIMI". Missing it is
     worse than finding no headings at all, because everything after it falls
     into the previous section."""
     from workbook import _parse_week
-    wrapped = GA_WEEK.replace("HII SHI AKƐ KRISTOFONYO", "HII SHI AKƐ\nKRISTOFONYO")
+    wrapped = DANGME_WEEK
     parts, _, _ = _parse_week(wrapped)
     sections = {p["part_no"]: p["section"] for p in parts}
     roles = {p["part_no"]: p["role"] for p in parts}
@@ -208,48 +208,40 @@ def test_page_number_before_or_after_the_date(core):
     left = _heading("4   SEPTEMBER 14-20  |  YEREMIA 34-36")
     assert right["label"] == "SEPTEMBER 7–13" and right["book"] == "YEREMIA 32-33"
     assert left["label"] == "SEPTEMBER 14–20" and left["book"] == "YEREMIA 34-36"
-    assert _heading("12  SƐPTƐMBA 21-27")["label"] == "SƐPTƐMBA 21–27"
+    assert _heading("12  NOVEMBER 16 -22  KƆMƆ YEMI 1 -2")["label"] == "NOVEMBER 16–22"
     assert _heading("SEPTEMBER 28-OCTOBER 4")["label"] == "SEPTEMBER 28–OCTOBER 4"
     # numbered part lines and ordinary prose must still be rejected
     assert _heading("4. Starting a Conversation (3 min.)") is None
-    assert _heading("5. Kɛ́ Oyaatsa Nɔ (Min. 4)") is None
+    assert _heading("5. Kpale Ya Slaa Nihi (Hɛngm. 4)") is None
     assert _heading("Discuss the material on pages 4-6 with the householder") is None
 
 
-REAL_GA = Path(__file__).resolve().parent / "tests_data" / "mwb_GA_202609.pdf"
-
-
-@pytest.mark.skipif(not REAL_GA.is_file(), reason="the real Ga workbook is not in the repo")
-def test_the_real_ga_workbook_parses_completely(core):
-    """The printed Ga workbook, end to end.
-
-    Its fonts carry no Unicode mapping, so before the per-font repair this file
-    yielded 2 weeks out of 8, with most parts missing and titles unreadable.
-    """
-    weeks, empty, _ = core.parse_brochure(REAL_GA.read_bytes())
-    assert len(weeks) == 8 and not empty
-    assert not [label for label in weeks if label.startswith("Week ")]
+def test_the_real_dangme_workbook_parses_completely(core):
+    """The printed Dangme workbook, end to end: every week, every part, its songs
+    and its reading — and the back-cover continuation is not a week of its own."""
+    weeks, empty, _ = core.parse_brochure(form("mwb_DG_202611.pdf"))
+    assert list(weeks) == [
+        "NOVEMBER 2–8", "NOVEMBER 9–15", "NOVEMBER 16–22", "NOVEMBER 23–29",
+        "NOVEMBER 30–DECEMBER 6", "DECEMBER 7–13", "DECEMBER 14–20", "DECEMBER 21–27",
+        "DECEMBER 28–JANUARY 3"]
+    assert not empty
     assert not [w for w in weeks.values() if w["gaps"]]
 
-    first = weeks["SEPTEMBER 7–13"]
-    assert first["book"] == "YEREMIA 32-33"
-    assert first["songs"] == ["1", "128", "143"]
-
+    first = weeks["NOVEMBER 2–8"]
+    assert first["book"] == "YEREMIA 49-50"
+    assert first["songs"] == ["44", "1", "33"]
     titles = {p["part_no"]: p["title"] for p in first["parts"]}
-    assert titles[2] == "Pɛimɔ Ŋmalɛi Lɛ Amli Jogbaŋŋ"   # the Ŋ must survive
-    assert titles[3] == "Biblia Kanemɔ"
+    assert titles[2] == "Ngmami ɔ Mi Junehi"
+    assert titles[3] == "Baiblo Kanemi"
     roles = {p["part_no"]: p["role"] for p in first["parts"]}
     assert roles[3] == "Bible Reading" and roles[8] == "Bible Study Conductor"
+    assert roles[6] == "Making Disciples"
 
-    # every week has its three songs and a scripture reading
     for label, w in weeks.items():
         assert len(w["songs"]) == 3, label
-        assert w["book"].startswith("YEREMIA"), label
-
-    # and no repaired text still carries the stand-in characters
-    for w in weeks.values():
-        for p in w["parts"]:
-            assert not set(p["title"]) & set("½Á¿"), p["title"]
+        assert w["book"], label
+        assert w["parts"][-1]["role"] == "Bible Study Conductor", label
+    assert core.guess_first_monday(weeks, "mwb_DG_202611.pdf") == (date(2026, 11, 2), True)
 
 
 def test_past_weeks_are_dropped_but_still_anchor_the_dates(core, english_workbook):

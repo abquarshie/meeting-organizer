@@ -1,6 +1,6 @@
 name: Nightly backup
 
-# Saves a full copy of the Neon database every night as a downloadable file on this workflow's run page
+# Saves a full copy of this app's own Neon database every night as a downloadable file on this workflow's run page
 # (Actions → Nightly backup → a run → Artifacts). Copies are kept for 30 days.
 #
 # One-time setup: in GitHub, Settings → Secrets and variables → Actions → New repository secret,

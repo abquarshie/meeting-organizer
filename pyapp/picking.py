@@ -5,7 +5,6 @@ import re
 
 from constants import GROUP_TAGS, MIDWEEK, ROLES, SISTER_ROLES
 from db import (
-    get_outgoing_on,
     get_suspended,
     get_unavailable,
     last_assignment_dates,
@@ -27,6 +26,7 @@ from utils import (
     slot_label,
     weeks_apart,
 )
+from i18n import app_locale, role_label, t as _t
 
 
 # =============================================================================
@@ -43,10 +43,12 @@ def eligible_ids(role, students, away=frozenset(), suspended=frozenset()):
     active = active[~active["id"].isin(away)]
     if role not in ROLES:
         return active["id"].tolist()
-    mask = active["privilege_list"].apply(lambda p: role in p)
+    # astype(bool): with nobody added yet, apply() gives an empty object Series, which pandas would read as a list
+    # of column names rather than a filter
+    mask = active["privilege_list"].apply(lambda p: role in p).astype(bool)
     if role not in SISTER_ROLES:
         mask &= active["gender"] == "Brother"
-    return active[mask]["id"].tolist()
+    return active.loc[mask, "id"].tolist()
 
 
 def ordered_options(ids, last_dates, keep=None):
@@ -60,8 +62,7 @@ def ordered_options(ids, last_dates, keep=None):
 
 def person_label_factory(students, last_dates, away=frozenset(), role_dates=None,
                         suspended=frozenset(), details=None,
-                        meeting_date=None, role=None, outgoing=frozenset(),
-                        upcoming=None):
+                        meeting_date=None, role=None, upcoming=None, locale=None):
     """Labels for the people dropdowns.
 
     Each reads "🟢 Kofi Mensah — 3 weeks ago, Bible Reading": a colour for how
@@ -70,8 +71,9 @@ def person_label_factory(students, last_dates, away=frozenset(), role_dates=None
     green.
 
 
-    `upcoming` ({person: (date, what)}) is each person's next assignment
-    after this meeting, named when it falls this week or next.
+    `details` and `upcoming` ({person: (date, role or part, assisted)}) are each person's latest assignment before
+    this meeting and next one after it; the next one is named when it falls this week or next. The words are in the
+    app language (`locale`, read from settings when not given).
 
     A label must not change while the page is being filled in. Streamlit
     remembers a dropdown's choice by its label text; if the label changes
@@ -86,36 +88,44 @@ def person_label_factory(students, last_dates, away=frozenset(), role_dates=None
     tags = dict(zip(students["id"], students["group_list"]))
     details = details or {}
     upcoming = upcoming or {}
+    loc = locale or app_locale()
 
     def label(pid):
         if pid is None:
-            return "— Unassigned —"
+            return _t("common.unassigned", loc)
         flags = ""
         if pid in inactive:
-            flags += " · inactive"
+            flags += " · " + _t("rot.flag_inactive", loc)
         if pid in away:
-            flags += " · away"
-        if pid in outgoing:
-            flags += " · going out"
+            flags += " · " + _t("rot.flag_away", loc)
         if pid in suspended:
-            flags += " · suspended"
+            flags += " · " + _t("rot.flag_suspended", loc)
         for g in tags.get(pid, []):
-            flags += f" · {GROUP_TAGS[g]}"
+            flags += " · " + _t(f"rot.tag_{GROUP_TAGS[g]}", loc)
         nxt = upcoming.get(pid)
         if nxt and meeting_date and weeks_apart(meeting_date, nxt[0]) <= 1:
             when = as_date(nxt[0])
-            flags += (f" · {nxt[1]} {relative_week(when, meeting_date)}"
-                      f" ({when.day} {when:%b})").replace(" this week", " later this week")
+            span = (_t("sched.later_this_week", loc) if weeks_apart(meeting_date, when) == 0
+                    else relative_week(when, meeting_date, loc))
+            flags += f" · {_what(nxt[1], nxt[2], True, loc)} {span} ({when.day} {when:%b})"
         role_last = (role_dates or {}).get(pid)
-        marker, wording = recency(role_last or last_dates.get(pid), meeting_date)
+        marker, wording = recency(role_last or last_dates.get(pid), meeting_date, loc)
         if role_last:
-            what = f"{wording}, this same part"
+            what = _t("sched.same_part", loc, when=wording)
         else:
             entry = details.get(pid)
-            what = f"{wording}, {entry[1]}" if entry and entry[1] else wording
+            what = f"{wording}, {_what(entry[1], entry[2], False, loc)}" if entry and entry[1] else wording
         return f"{marker} {names.get(pid, '?')} — {what}{flags}"
 
     return label
+
+
+def _what(what, assisted, after, locale):
+    """"Bible Reading", or "assisted, Bible Reading" / "assisting, Bible Reading", in the app language."""
+    name = role_label(what, locale)
+    if not assisted:
+        return name
+    return _t("rot.assisting" if after else "rot.assisted", locale, what=name)
 
 
 def recover_person(value, candidates, students):
@@ -211,12 +221,10 @@ def suggest_assignments(slots, students, away, meeting_date, skip=None):
         for pid in (pair if isinstance(pair, (tuple, list)) else (pair,)):
             if pid is not None:
                 used.add(pid)
-    # most constrained first; parts a visitor can take (the public talk) last,
-    # since a guest can fill them and a brother can't be borrowed back
+    # most constrained first
     order = sorted(
         (i for i in range(len(slots)) if i not in (skip or {})),
-        key=lambda i: (bool(slots[i].get("allow_visitor")),
-                       len(eligible_ids(slots[i]["role"], students, away))))
+        key=lambda i: len(eligible_ids(slots[i]["role"], students, away)))
 
     for i in order:
         slot = slots[i]
@@ -262,8 +270,7 @@ def create_week(meeting_date, label, week, students, aux_on, group=""):
     the part that actually needs a person.
     """
     slots = apply_aux(build_midweek_slots(week["parts"]), aux_on)
-    away = (get_unavailable(meeting_date) | get_suspended(students, meeting_date)
-            | get_outgoing_on(meeting_date))
+    away = get_unavailable(meeting_date) | get_suspended(students, meeting_date)
     picks = suggest_assignments(slots, students, away, meeting_date)
     songs = week.get("songs") or []
     meta = {
@@ -282,7 +289,7 @@ def create_week(meeting_date, label, week, students, aux_on, group=""):
 
 
 def assignment_issues(slots, picks, students, meeting_date, meeting_type,
-                      suspended=frozenset(), other_meeting=None):
+                      suspended=frozenset(), locale=None):
     """Everything worth flagging about one meeting's picks, as
     [{"level": "error" | "warning", "slots": [index, ...], "text": "..."}].
 
@@ -291,10 +298,9 @@ def assignment_issues(slots, picks, students, meeting_date, meeting_type,
     shown). It only compares the picks with one another, with other meetings'
     saved assignments, and with the people's records — never with this
     meeting's own saved copy, so saving again unchanged raises nothing new.
-
-    other_meeting: (meeting_type, {person}) for the other meeting held on the
-    same date, if there is one.
+    The texts are in the app language (`locale`, read from settings when not given).
     """
+    loc = locale or app_locale()
     names = dict(zip(students["id"], students["name"]))
     categories = dict(zip(students["id"], students["gender"]))
     families = dict(zip(students["id"], students["family"]))
@@ -305,56 +311,45 @@ def assignment_issues(slots, picks, students, meeting_date, meeting_type,
 
     usage = {}
     for i, val in picks.items():
-        if i >= 10000 or i >= len(slots):       # a visitor's name or congregation
+        if i >= len(slots):
             continue
         sid, aid = val
-        part = slot_label(slots[i])
+        part = slot_label(slots[i], locale=loc)
         if sid is not None and sid == aid:
-            add("error", [i], f"{names.get(sid, '?')} is both student and "
-                              f"assistant on '{part}'.")
+            add("error", [i], _t("check.student_and_assistant", loc, name=names.get(sid, "?"), part=part))
         for pid in (sid, aid):
             if pid is not None:
                 usage.setdefault(pid, []).append(i)
         if (sid is not None and aid is not None
                 and categories.get(sid) != categories.get(aid)
                 and not same_family(families, sid, aid)):
-            add("warning", [i], f"'{part}': student and assistant are in "
-                                "different categories and not family.")
+            add("warning", [i], _t("check.mixed", loc, part=part))
 
     for pid, where in usage.items():
         where = sorted(set(where))
         if len(where) > 1:
-            add("warning", where,
-                f"{names.get(pid, '?')} has {len(where)} parts in this meeting: "
-                + ", ".join(slot_label(slots[i]) for i in where) + ".")
+            add("warning", where, _t("check.many_parts", loc, name=names.get(pid, "?"), count=len(where),
+                                     parts=", ".join(slot_label(slots[i], locale=loc) for i in where)))
         if pid in suspended:
-            add("warning", where, f"{names.get(pid, '?')} is suspended but "
-                                  "still assigned.")
+            add("warning", where, _t("check.suspended", loc, name=names.get(pid, "?")))
 
     # the same part too close to this week, on either side
     gap = same_role_gap_days()
     for i, val in picks.items():
-        if i >= 10000 or i >= len(slots) or val[0] is None:
+        if i >= len(slots) or val[0] is None:
             continue
         sid, role = val[0], slots[i]["role"]
         before = last_role_dates(role, meeting_date).get(sid)
         after = next_role_dates(role, meeting_date).get(sid)
         if held_recently({sid: before} if before else {}, sid, meeting_date, gap):
             when = as_date(before)
-            add("warning", [i], f"{names.get(sid, '?')} had '{role}' "
-                                f"{relative_week(when, meeting_date)} "
-                                f"({when.day} {when:%b}) — someone else would "
-                                "usually take it this week.")
+            add("warning", [i], _t("check.too_soon", loc, name=names.get(sid, "?"), part=role_label(role, loc),
+                                   when=relative_week(when, meeting_date, loc),
+                                   date=f"{when.day} {when:%b}"))
         if after and 0 < (as_date(after) - as_date(meeting_date)).days <= gap:
             when = as_date(after)
-            add("warning", [i], f"{names.get(sid, '?')} already has '{role}' "
-                                f"{relative_week(when, meeting_date)} "
-                                f"({when.day} {when:%b}) as well.")
-
-    if other_meeting:
-        other_type, other_people = other_meeting
-        for pid in set(usage) & set(other_people):
-            add("warning", usage[pid], f"{names.get(pid, '?')} also has a part "
-                                       f"in the {other_type} on this date.")
+            add("warning", [i], _t("check.also_has", loc, name=names.get(sid, "?"), part=role_label(role, loc),
+                                   when=relative_week(when, meeting_date, loc),
+                                   date=f"{when.day} {when:%b}"))
     return issues
 

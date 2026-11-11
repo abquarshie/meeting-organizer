@@ -1,22 +1,25 @@
 @import "tailwindcss";
 
-/* Design tokens. The brand is the ink blue of the app icon and the printed sheets; the same token names as the other
- * apps in this family (Susu, Assembly Portal), so they read as one set. Pages use Tailwind utilities (bg-surface,
- * text-muted…); the building blocks repeated on every form (buttons, inputs, cards, tables) are named classes below. */
+/* Design tokens. Plum and marigold: the plum of the app icon and the printed sheets, with marigold as the one warm
+ * accent (the main button on the hero card, a marker beside the open page, the edge of the save bar). Pages use Tailwind utilities
+ * (bg-surface, text-muted…); the building blocks repeated on every form (buttons, inputs, cards, tables) are named
+ * classes below. Change the look here and nowhere else. */
 :root {
-  --bg: #f4f6f9; --surface: #ffffff; --subtle: #eef2f6; --line: #e2e7ee; --line-strong: #cfd7e2;
-  --ink: #0f1b2a; --muted: #5b6878; --faint: #8a96a6;
-  --brand: #1f5288; --brand-ink: #1f5288; --brand-soft: #e8f0f9; --on-brand: #ffffff;
-  --hero-a: #0f2a48; --hero-b: #1f5288;
-  --ok: #12804a; --ok-soft: #e3f5eb; --bad: #c7362f; --bad-soft: #fdeceb; --warn: #a35a00; --warn-soft: #fdf2e0;
+  --bg: #f7f4f9; --surface: #ffffff; --subtle: #f1ecf4; --line: #e6dfec; --line-strong: #d3c8dc;
+  --ink: #1d1424; --muted: #66597a; --faint: #958aa3;
+  --brand: #6b2f8f; --brand-ink: #5e2780; --brand-soft: #f1e8f7; --on-brand: #ffffff;
+  --accent: #e0a526; --accent-ink: #8a5a00; --accent-soft: #fcf1d9; --on-accent: #2a1a00;
+  --hero-a: #3a1650; --hero-b: #6b2f8f;
+  --ok: #17804d; --ok-soft: #e3f5eb; --bad: #c43a3a; --bad-soft: #fdecec; --warn: #9a5b00; --warn-soft: #fdf2e0;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0a1018; --surface: #111a25; --subtle: #17222f; --line: #223042; --line-strong: #2e3f55;
-    --ink: #e7ecf3; --muted: #97a3b4; --faint: #6c788a;
-    --brand: #3b7fc4; --brand-ink: #8fbfee; --brand-soft: #142a42; --on-brand: #ffffff;
-    --hero-a: #0d2440; --hero-b: #1d4b7c;
+    --bg: #120c17; --surface: #1b1322; --subtle: #22182b; --line: #33263f; --line-strong: #463655;
+    --ink: #ede6f2; --muted: #a99bb8; --faint: #7a6c8a;
+    --brand: #a56fd0; --brand-ink: #cfa8ee; --brand-soft: #2c1a3c; --on-brand: #1b0d26;
+    --accent: #f2c14e; --accent-ink: #f6d27e; --accent-soft: #3a2a0c; --on-accent: #2a1a00;
+    --hero-a: #2a1239; --hero-b: #55257a;
     --ok: #4ade80; --ok-soft: #10291b; --bad: #f87171; --bad-soft: #351618; --warn: #fbbf24; --warn-soft: #33260c;
     color-scheme: dark;
   }
@@ -35,6 +38,10 @@
   --color-brand-ink: var(--brand-ink);
   --color-brand-soft: var(--brand-soft);
   --color-on-brand: var(--on-brand);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
   --color-ok: var(--ok);
   --color-ok-soft: var(--ok-soft);
   --color-bad: var(--bad);
@@ -42,9 +49,9 @@
   --color-warn: var(--warn);
   --color-warn-soft: var(--warn-soft);
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --shadow-soft: 0 1px 2px rgb(15 23 42 / .04), 0 1px 3px rgb(15 23 42 / .03);
-  --shadow-card: 0 1px 2px rgb(15 23 42 / .04), 0 8px 24px -12px rgb(15 23 42 / .10);
-  --shadow-lift: 0 16px 40px -12px rgb(15 23 42 / .28);
+  --shadow-soft: 0 1px 2px rgb(42 18 57 / .04), 0 1px 3px rgb(42 18 57 / .03);
+  --shadow-card: 0 1px 2px rgb(42 18 57 / .04), 0 8px 24px -12px rgb(42 18 57 / .10);
+  --shadow-lift: 0 16px 40px -12px rgb(42 18 57 / .28);
   --breakpoint-md: 900px;
 }
 
@@ -95,7 +102,7 @@
     background-image: radial-gradient(rgb(255 255 255 / .55) 1px, transparent 1px); background-size: 18px 18px;
     mask-image: linear-gradient(110deg, transparent 35%, #000 100%); }
   .hero .btn { @apply border-white/20 bg-white/10 text-white hover:bg-white/20; }
-  .hero .btn.primary { @apply border-white bg-white text-[#0f2a48] hover:bg-white/90 hover:brightness-100; }
+  .hero .btn.primary { @apply border-accent bg-accent text-on-accent hover:bg-accent hover:brightness-105; }
   .hero-bar { @apply h-1.5 w-full min-w-12 overflow-hidden rounded-full bg-white/15; }
   .hero-bar > div { @apply h-full rounded-full; }
 
@@ -151,7 +158,7 @@
   .check input { @apply size-[18px] flex-none rounded accent-brand; }
 
   .btn { @apply inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-line-strong/70 bg-surface px-4 py-2 text-sm font-semibold whitespace-nowrap text-ink no-underline shadow-soft transition-[background-color,border-color,filter,transform] hover:border-line-strong hover:bg-subtle active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0; }
-  .btn.primary { @apply border-brand bg-brand text-on-brand hover:bg-brand hover:brightness-110; box-shadow: 0 1px 2px rgb(15 23 42 / .12), inset 0 1px 0 rgb(255 255 255 / .12); }
+  .btn.primary { @apply border-brand bg-brand text-on-brand hover:bg-brand hover:brightness-110; box-shadow: 0 1px 2px rgb(42 18 57 / .12), inset 0 1px 0 rgb(255 255 255 / .12); }
   .btn.danger { @apply text-bad hover:border-bad/40 hover:bg-bad-soft; }
   .btn.ghost { @apply border-transparent bg-transparent px-2 text-brand-ink shadow-none hover:border-transparent; }
   .btn.small { @apply min-h-8 rounded-lg px-2.5 py-1 text-[13px]; }
@@ -192,7 +199,7 @@
   /* ---- progress ---- */
   .bar { @apply h-1.5 w-full min-w-12 overflow-hidden rounded-full bg-subtle; }
   .fill { @apply h-full rounded-full bg-brand transition-[width] duration-300; }
-  .savebar { @apply sticky bottom-3 z-20 flex flex-wrap items-center gap-3 border-brand/40 bg-surface/95 shadow-lift backdrop-blur max-md:bottom-[4.75rem] max-md:gap-2 max-md:p-3; }
+  .savebar { @apply sticky bottom-3 z-20 flex flex-wrap items-center gap-3 border-accent/70 bg-surface/95 shadow-lift backdrop-blur max-md:bottom-[4.75rem] max-md:gap-2 max-md:p-3; }
   .savebar .btn { @apply max-md:min-h-9 max-md:px-3; }
 
   /* ---- the schedule editor ---- */
@@ -205,7 +212,7 @@
   .swatch { @apply inline-block size-2.5 flex-none rounded-full; }
 
   /* ---- app frame ---- */
-  .nav-link { @apply flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-muted no-underline transition-colors hover:bg-subtle hover:text-ink aria-[current=page]:bg-brand-soft aria-[current=page]:font-semibold aria-[current=page]:text-brand-ink [&_svg]:size-[19px]; }
+  .nav-link { @apply flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-muted no-underline transition-colors hover:bg-subtle hover:text-ink aria-[current=page]:bg-brand-soft aria-[current=page]:font-semibold aria-[current=page]:text-brand-ink aria-[current=page]:shadow-[inset_3px_0_0_var(--accent)] [&_svg]:size-[19px]; }
 }
 
 @keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } }

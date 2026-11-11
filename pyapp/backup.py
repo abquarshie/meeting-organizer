@@ -5,14 +5,11 @@ import json
 
 from db import (  # underscored: not in *
     _forget_no_meeting,
-    _forget_outgoing_engagements,
-    _forget_outgoing_speakers,
     _forget_schedules,
     _forget_settings,
     _forget_students,
     _forget_templates,
     _forget_unavailable,
-    _talks,
     get_conn,
     init_db,
     log_change,
@@ -21,12 +18,13 @@ from db import (  # underscored: not in *
     set_setting,
     table_columns,
 )
+from i18n import ui
 from workbook import _workbook  # underscored: not in *
 
 TABLES = [
     "students", "schedules", "meetings", "settings",
     "unavailable", "workbook_weeks", "audit_log", "snapshots", "templates",
-    "talks", "no_meeting_periods", "outgoing_speakers", "outgoing_engagements",
+    "no_meeting_periods",
 ]
 BACKUP_VERSION = 1
 
@@ -61,10 +59,10 @@ def _clean(value):
 
 
 def import_all(data, log=True):
-    """Replace every table with the backup's rows. Unknown columns are ignored,
-    so backups from older versions of the app still load."""
+    """Replace every table with the backup's rows. Unknown columns and tables are ignored, so a backup from the
+    Meeting Scheduler loads too: its weekend meetings, public talks and outgoing speakers are left out."""
     if not isinstance(data, dict) or "students" not in data:
-        raise ValueError("This isn't a Meeting Scheduler backup.")
+        raise ValueError(ui("admin.not_backup"))
     init_db()
     counts = {}
     with get_conn() as conn:
@@ -84,7 +82,7 @@ def import_all(data, log=True):
                     list(keep.values()),
                 )
             counts[table] = len(rows)
-    init_db()           # upgrade anything restored from an older version
+    init_db()           # drops what this app doesn't keep (weekend meetings, their roles)
     resync_identities()  # rows came back with their own ids
     _forget_schedules()
     _forget_settings()
@@ -92,14 +90,10 @@ def import_all(data, log=True):
     _forget_templates()
     _forget_unavailable()
     _forget_no_meeting()
-    _forget_outgoing_speakers()
-    _forget_outgoing_engagements()
-    _talks.clear()            # the talk list and the workbook came back too
-    _workbook.clear()
+    _workbook.clear()         # the workbook came back too
     if log:
-        log_change("Data restored",
-                   f"{counts.get('students', 0)} participants, "
-                   f"{counts.get('schedules', 0)} schedule rows")
+        log_change(ui("log.data_restored"),
+                   ui("log.restore_detail", people=counts.get("students", 0), rows=counts.get("schedules", 0)))
     return counts
 
 

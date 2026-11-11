@@ -15,3 +15,5 @@ next-env.d.ts
 __pycache__/
 *.pyc
 .pytest_cache/
+# The published forms and workbooks, for local tests only (see tests/conftest.py)
+tests/forms/

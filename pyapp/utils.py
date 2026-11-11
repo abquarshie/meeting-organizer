@@ -8,7 +8,6 @@ from constants import (
     AUX_HALL,
     AVAILABLE,
     CONFLICT,
-    HALL_NAMES,
     MAIN_HALL,
     MIDWEEK,
     NEVER_BAND,
@@ -16,8 +15,8 @@ from constants import (
     RESTING,
     STUDENT_ROLES,
     THIS_WEEK,
-    WEEKEND,
 )
+from i18n import part_title as _title, t as _t
 
 
 # =============================================================================
@@ -50,25 +49,28 @@ def parse_privileges(value):
     return result
 
 
-# Ga part titles, from the printed workbook. Checked before the English
-# keywords because a Ga title matches none of them and would otherwise fall
-# through to the section default, making every ministry part the same role.
-GA_ROLE_WORDS = [
-    ("biblia kanem", "Bible Reading"),
-    ("biblia nikasem", "Bible Study Conductor"),      # Asafoŋ Biblia Nikasemɔ
-    ("ŋmalɛi", "Spiritual Gems"),                     # Pɛimɔ Ŋmalɛi Lɛ Amli Jogbaŋŋ
-    ("sanegbaa shishi", "Initial Presentation"),      # Kɛ́ Oyaaje Sanegbaa Shishi
-    ("oyaatsa", "Initial Presentation"),              # Kɛ́ Oyaatsa Nɔ — following up
-    ("obaakɛɛ", "Initial Presentation"),              # Mɛni Obaakɛɛ?
-    ("kaselɔi", "Making Disciples"),                  # Kɛ́ Oofee Mɛi Kaselɔi
-    ("gbalamɔ ohemɔkɛyeli", "Explaining Beliefs"),
+# Dangme part titles, from the printed workbook (lower case, after workbook.repair_dangme has put back the letters
+# its fonts scramble). Checked before the English keywords because a Dangme title matches none of them and would
+# otherwise fall through to the section default, making every ministry part the same role. The longer phrases come
+# first: "asafo baiblo mi ní kasemi" (the Bible study) also holds "baiblo".
+DANGME_ROLE_WORDS = [
+    ("asafo baiblo mi ní kasemi", "Bible Study Conductor"),
+    ("baiblo kanemi", "Bible Reading"),
+    ("ngmami ɔ mi junehi", "Spiritual Gems"),
+    ("je ní sɛɛmi sisi", "Initial Presentation"),       # Moo Je Ní Sɛɛmi Sisi: starting a conversation
+    ("kpale ya slaa", "Initial Presentation"),          # following up
+    ("mɛni o ma de", "Initial Presentation"),           # What Will You Say?
+    ("pee nihi kaseli", "Making Disciples"),
+    ("tsɔɔ níhi nɛ o heɔ yeɔ mi", "Explaining Beliefs"),
 ]
+# A bare "Munyu Tumi" (Talk) in the ministry section is a student talk.
+DANGME_TALK = "munyu tumi"
 
 
-# English words infer_role() keys on, kept beside the Ga list so a caller can
+# English words infer_role() keys on, kept beside the Dangme list so a caller can
 # ask whether a title actually named a part type or merely fell through.
 EN_ROLE_WORDS = (
-    "chairman", "prayer", "watchtower", "public talk", "reader", "bible study",
+    "chairman", "prayer", "reader", "bible study",
     "conductor", "bible reading", "gems", "treasures", "living", "disciple",
     "explaining", "belief", "presentation", "conversation", "following up", "talk",
 )
@@ -77,28 +79,24 @@ EN_ROLE_WORDS = (
 def role_matched(title):
     """True when the title names a part type rather than taking the default."""
     t = nfc(title or "").lower()
-    if t.strip(" .:") == "wiemɔ":          # a bare Ga "Talk", handled below
+    if t.strip(" .:") == DANGME_TALK:
         return True
-    if any(word in t for word, _ in GA_ROLE_WORDS):
+    if any(word in t for word, _ in DANGME_ROLE_WORDS):
         return True
     return any(word in t for word in EN_ROLE_WORDS)
 
 
 def infer_role(title, section=None):
     t = nfc(title or "").lower()
-    for word, role in GA_ROLE_WORDS:
+    for word, role in DANGME_ROLE_WORDS:
         if word in t:
             return role
-    if section == "Ministry" and t.strip(" .:") == "wiemɔ":   # a student talk
+    if section == "Ministry" and t.strip(" .:") == DANGME_TALK:   # a student talk
         return "Student Talk"
     if "chairman" in t:
         return "Chairman"
     if "prayer" in t:
         return "Prayer"
-    if "watchtower" in t:
-        return "Watchtower Reader"
-    if "public talk" in t:
-        return "Public Talk"
     if "reader" in t:
         return "Reader"
     if "bible study" in t or "conductor" in t:
@@ -125,8 +123,6 @@ def infer_role(title, section=None):
 
 
 def default_section(role, meeting_type=MIDWEEK):
-    if meeting_type == WEEKEND:
-        return "Weekend"
     if role in ("Chairman", "Aux Classroom Counselor"):
         return "Opening"
     if role in ("Treasures Talk", "Spiritual Gems", "Bible Reading"):
@@ -136,17 +132,9 @@ def default_section(role, meeting_type=MIDWEEK):
     return "Living"
 
 
-def visitor_allowed(role, title, section=None):
-    """Parts a visitor from another congregation may take, typed by hand
-    instead of picked from the congregation's list: the public talk (with the
-    closing prayer that goes with it). Every other part is a local brother."""
-    return role == "Public Talk"
-
-
 def make_slot(title, role, section, part_no=None, minutes=None, hall=MAIN_HALL):
     return {
         "hall": hall or MAIN_HALL,
-        "allow_visitor": visitor_allowed(role, title, section),
         "part_no": part_no,
         "title": nfc(title),
         "role": role,
@@ -199,20 +187,20 @@ def week_label(day):
     return f"Week {number} of {monday:%B} ({span})"
 
 
-def relative_week(other, meeting_date):
+def relative_week(other, meeting_date, locale="en"):
     """How another date's week relates to this meeting's week, in words:
     "this week", "last week", "next week", "3 weeks ago", "in 2 weeks"."""
     n = weeks_apart(meeting_date, other)
     if n == 0:
-        return "this week"
+        return _t("date.this_week", locale)
     if n == -1:
-        return "last week"
+        return _t("date.last_week", locale)
     if n == 1:
-        return "next week"
-    return f"{-n} weeks ago" if n < 0 else f"in {n} weeks"
+        return _t("date.next_week", locale)
+    return _t("date.weeks_ago", locale, count=-n) if n < 0 else _t("date.in_weeks", locale, count=n)
 
 
-def recency(last_date, meeting_date=None):
+def recency(last_date, meeting_date=None, locale="en"):
     """(marker, wording) for when someone last had a part, in meeting weeks
     before the meeting being scheduled.
 
@@ -222,40 +210,41 @@ def recency(last_date, meeting_date=None):
     then = as_date(last_date) if last_date else None
     now = as_date(meeting_date) if meeting_date else date.today()
     if then is None or now is None:
-        return NEVER_BAND
+        return NEVER_BAND[0], _t("rot.never", locale)
     if then > now:
-        return CONFLICT[0], conflict_wording(then, now)
+        return CONFLICT[0], conflict_wording(then, now, locale)
     weeks = weeks_apart(then, now)
     if weeks == 0:
-        return THIS_WEEK
+        return THIS_WEEK[0], _t("rot.resting", locale)
     if weeks == 1:
-        return RESTING, "last week"
-    return AVAILABLE, (f"{weeks} weeks ago" if weeks <= 4 else "over a month ago")
+        return RESTING, _t("date.last_week", locale)
+    return AVAILABLE, (_t("date.weeks_ago", locale, count=weeks) if weeks <= 4
+                       else _t("rot.over_month", locale))
 
 
-def conflict_wording(when, meeting_date):
+def conflict_wording(when, meeting_date, locale="en"):
     """How far after this meeting another assignment falls, with its date.
 
     Orange on its own only says "later"; whether that is this weekend or a
     month away changes whether it matters, so the wording spells it out.
     """
     when = as_date(when)
-    span = relative_week(when, meeting_date)
-    span = "later this week" if span == "this week" else span
-    return f"{CONFLICT[1]} {span} ({when.day} {when:%b})"
+    span = (_t("sched.later_this_week", locale) if weeks_apart(meeting_date, when) == 0
+            else relative_week(when, meeting_date, locale))
+    return f"{_t('rot.conflict', locale)} {span} ({fmt_date(when.isoformat(), short=True)})"
 
 
-def slot_label(slot, hall_names=None):
+def slot_label(slot, hall_names=None, locale="en"):
     """hall_names lets printed output name the room in the slip language;
-    the interface passes nothing and gets English."""
-    label = slot["title"]
-    if slot.get("minutes") and "min" not in label.lower():
-        label += f" ({slot['minutes']} min)"
+    the interface passes its locale for the room names and the minutes."""
+    label = _title(slot["title"], locale)
+    if slot.get("minutes") and "min" not in label.lower() and "hɛngm" not in label.lower():
+        label += " " + _t("part.minutes", locale, count=slot["minutes"])
     label = f"{slot['part_no']}. {label}" if slot.get("part_no") else label
     hall = slot.get("hall") or MAIN_HALL
     if hall != MAIN_HALL:
-        names = hall_names or HALL_NAMES
-        label += f" · {names.get(hall, HALL_NAMES.get(hall, hall))}"
+        names = hall_names or {"aux_1": _t("hall.aux1", locale), "aux_2": _t("hall.aux2", locale)}
+        label += f" · {names.get(hall, hall)}"
     return label
 
 
@@ -288,17 +277,13 @@ def apply_aux(slots, aux_on):
 def fill_progress(slots, picks):
     """(filled, needed) for the parts on the page, counted slot by slot.
 
-    picks holds (person, assistant) under each slot's index; a visitor's name
-    sits under index + 10000 and his congregation under index + 20000. The
-    congregation belongs to the name, so it is never a part of its own —
-    counting it made "filled" run past "needed".
+    picks holds (person, assistant) under each slot's index.
     """
     needed = filled = 0
     for i, slot in enumerate(slots):
         sid, aid = picks.get(i, (None, None))
-        visitor = nfc(str(picks.get(i + 10000) or ""))
         needed += 1
-        filled += int(sid is not None or bool(visitor))
+        filled += int(sid is not None)
         if slot["needs_assistant"]:
             needed += 1
             filled += int(aid is not None)

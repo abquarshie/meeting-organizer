@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """Fill a blank S-140 midweek-meeting template (.docx) from schedule data.
 
-Adapted from the midweek-meeting-schedule filler so the Streamlit app can call
-it directly. `data` uses the same shape as that script's data.json:
+Adapted from the midweek-meeting-schedule filler. `data` uses the same shape as that script's data.json, plus the
+slip language, whose words (song, minutes, group, the meeting's name) are written where the blank had its own:
 
 {
-  "congregation": "...", "aux": true if any week uses the classroom,
+  "congregation": "...", "aux": true if any week uses the classroom, "language": "English" or "Dangme",
   "weeks": [{
     "heading": "...", "chairman": "...", "opening_song": "...", "opening_prayer": "...",
     "treasures": [{"title", "min", "name"} x3],
@@ -25,10 +25,13 @@ import docx
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
+from i18n import doc, ui
+
 NB = "\u00a0"  # spacer the template uses before "(Min. X)"
-# The blank is published per language and marks its date row differently. Only
-# this marker is searched for; every other placeholder is replaced by position.
-DATE_MARKERS = ("[DEETI]", "[DATE]")
+# The blank is published per language. The English and the Dangme blanks both mark their date row [DATE]; the
+# congregation is [CONGREGATION] on the English one and [ASAFO Ɔ BIƐ] on the Dangme one. Only these markers are
+# searched for; every other placeholder is replaced by position, and the two blanks have the same rows.
+DATE_MARKERS = ("[DATE]", "[DEETI]")
 CONG_MARKERS = ("[ASAFO", "[CONGREGATION")
 BLOCK_LEN = 24  # rows per week block, date row inclusive
 OFF = dict(group=1, opening_song=3, treasures_hdr=6, treasures=7,
@@ -104,11 +107,11 @@ def _S(tr, idx, text):
         _set_text(cs[idx], text or "")
 
 
-def _song(value, ga):
-    """"Song 74" or "Lala 74", whichever matches the template.
+def _song(value, word):
+    """"Song 74" or "La 74", in the template's language.
 
     Setting a cell replaces everything in it, including the template's own
-    "Song"/"Lala", so the word has to be written back with the number.
+    "Song"/"La", so the word has to be written back with the number.
     """
     text = str(value or "").strip()
     if not text:
@@ -116,7 +119,7 @@ def _song(value, ga):
     found = re.search(r"\d+", text)
     if not found:
         return text
-    return f"{'Lala' if ga else 'Song'} {found.group()}"
+    return f"{word} {found.group()}"
 
 
 def _is_date_row(tr):
@@ -139,29 +142,25 @@ def _repeat_table(doc, tbl, extra, blocks):
             tbl.append(copy.deepcopy(tr))
 
 
-def _part(n, item):
+def _part(n, item, minutes="Min."):
     m = str(item.get("min", "") or "").strip()
     title = item["title"].strip()
-    return "%d. %s%s(Min. %s)" % (n, title, NB, m) if m else "%d. %s" % (n, title)
+    return "%d. %s%s(%s %s)" % (n, title, NB, minutes, m) if m else "%d. %s" % (n, title)
 
 
 def check_s140_template(template_bytes):
     """Raise S140Error unless this is the blank S-140, so a wrong file is
     refused when it is chosen rather than when someone tries to export."""
     try:
-        doc = docx.Document(io.BytesIO(template_bytes))
+        document = docx.Document(io.BytesIO(template_bytes))
     except Exception as exc:
-        raise S140Error(
-            f"This file could not be read as a Word document: {str(exc)[:120]}"
-        ) from exc
-    if not doc.tables:
-        raise S140Error("The template has no table - is this the blank S-140?")
-    trs = doc.tables[0]._tbl.findall(qn("w:tr"))
+        raise S140Error(ui("err.s140_word", reason=str(exc)[:120])) from exc
+    if not document.tables:
+        raise S140Error(ui("err.s140_no_table"))
+    trs = document.tables[0]._tbl.findall(qn("w:tr"))
     weeks = sum(1 for tr in trs if _is_date_row(tr))
     if not weeks:
-        raise S140Error(
-            "No date row found — this does not look like the blank S-140. "
-            "It should contain [DATE] or [DEETI].")
+        raise S140Error(ui("err.s140_no_date"))
     return weeks
 
 
@@ -173,32 +172,30 @@ def fill_s140(template_bytes, data):
     """
     weeks = data["weeks"]
     keep_aux_column = bool(data.get("aux"))
-    doc = docx.Document(io.BytesIO(template_bytes))
-    if not doc.tables:
-        raise S140Error("The template has no table - is this the blank S-140?")
-    tbl = doc.tables[0]._tbl
+    language = data.get("language") or "English"
+    song_word = doc("doc.song", language)
+    minutes_word = doc("doc.s140_minutes", language)
+    document = docx.Document(io.BytesIO(template_bytes))
+    if not document.tables:
+        raise S140Error(ui("err.s140_no_table"))
+    tbl = document.tables[0]._tbl
     trs = tbl.findall(qn("w:tr"))
 
-    # which language's blank this is, read before the placeholders are replaced
-    ga = any("[DEETI]" in _txt(tr) for tr in trs)
     date_rows = [i for i, tr in enumerate(trs) if _is_date_row(tr)]
     head_rows = [i for i, tr in enumerate(trs)
                  if any(m in _txt(tr) for m in CONG_MARKERS)]
     if not date_rows:
-        raise S140Error(
-            "No date row found - is this the blank S-140 template?")
+        raise S140Error(ui("err.s140_no_date"))
     if len(weeks) > len(date_rows):
         # the published blank holds a single week, so it is repeated as many
         # times as the month needs rather than refusing the export
-        _repeat_table(doc, tbl, len(weeks) - len(date_rows), len(date_rows))
+        _repeat_table(document, tbl, len(weeks) - len(date_rows), len(date_rows))
         trs = tbl.findall(qn("w:tr"))
         date_rows = [i for i, tr in enumerate(trs) if _is_date_row(tr)]
         head_rows = [i for i, tr in enumerate(trs)
                      if any(m in _txt(tr) for m in CONG_MARKERS)]
     if len(weeks) > len(date_rows):                     # pragma: no cover
-        raise S140Error(
-            f"The template has {len(date_rows)} week block(s) but "
-            f"{len(weeks)} weeks were selected.")
+        raise S140Error(ui("err.s140_blocks", blocks=len(date_rows), weeks=len(weeks)))
 
     cong = data.get("congregation")
     if cong:
@@ -218,8 +215,7 @@ def fill_s140(template_bytes, data):
         # is bold at the table's own size.
         if wi == 0 and b >= 2:
             date_props = _run_props(_cells(trs[b])[0]) if _cells(trs[b]) else None
-            meeting_name = data.get("meeting_name") or (
-                "Wɔshiɛmɔ Kɛ Wɔshihilɛ Kpee" if ga else "Midweek Meeting")
+            meeting_name = data.get("meeting_name") or doc("doc.midweek_title", language)
             top = _cells(trs[b - 2])
             if len(top) >= 2:
                 _set_styled(top[0], meeting_name, date_props)
@@ -236,7 +232,7 @@ def fill_s140(template_bytes, data):
             continue
 
         # The counselor line. On the published blank this row is
-        # [blank | "Asa 2 Ŋaawolɔ:" | name], so the name goes in the third cell
+        # [blank | "Tsu Wayo ɔ Mi Ga Wolɔ:" | name], so the name goes in the third cell
         # — writing it to the second replaced the form's own label.
         group_cells = _cells(blk["group"])
         counselor_cells = len(group_cells)
@@ -248,7 +244,7 @@ def fill_s140(template_bytes, data):
                 group = str(w.get("aux_group") or "").strip()
                 if group:
                     # the room is already named by the label beside it
-                    word = "Kuu" if ga else "Group"
+                    word = doc("doc.group", language)
                     _set_styled(group_cells[0], f"{word} {group}",
                                 _run_props(group_cells[1]))
             else:
@@ -262,7 +258,7 @@ def fill_s140(template_bytes, data):
             _S(blk["group"], 1, "")
             _S(blk["group"], 2, "")
 
-        _S(blk["opening_song"], 1, _song(w.get("opening_song"), ga))
+        _S(blk["opening_song"], 1, _song(w.get("opening_song"), song_word))
         _S(blk["opening_song"], 3, w.get("opening_prayer", ""))
 
         if not keep_aux_column:
@@ -272,7 +268,7 @@ def fill_s140(template_bytes, data):
         n = 1
         for k, item in enumerate(w["treasures"][:3]):
             tr = trs[b + OFF["treasures"] + k]
-            _S(tr, 1, _part(n, item))
+            _S(tr, 1, _part(n, item, minutes_word))
             if len(_cells(tr)) >= 5:
                 _S(tr, 3, item.get("name2", ""))
                 _S(tr, 4, item.get("name", ""))
@@ -288,19 +284,19 @@ def fill_s140(template_bytes, data):
             slots.append(clone)
         for k, item in enumerate(ministry):
             tr = slots[k]
-            _S(tr, 1, _part(n, item))
+            _S(tr, 1, _part(n, item, minutes_word))
             names = item.get("name", "")
             if item.get("assistant"):
                 names = "%s/%s" % (names, item["assistant"])
             aux_names = item.get("name2", "")
             if aux_names and item.get("assistant2"):
                 aux_names = "%s/%s" % (aux_names, item["assistant2"])
-            _S(tr, 3, aux_names)  # Asa 2 = auxiliary classroom
-            _S(tr, 4, names)      # Asa 1 = main hall
+            _S(tr, 3, aux_names)  # Tsu Wayo ɔ = auxiliary classroom
+            _S(tr, 4, names)      # Asa a Nɔ = main hall
             n += 1
         drop += slots[len(ministry):]
 
-        _S(blk["middle_song"], 1, _song(w.get("middle_song"), ga))
+        _S(blk["middle_song"], 1, _song(w.get("middle_song"), song_word))
         living = w.get("living", [])
         slots = [trs[b + OFF["living"] + k] for k in range(N_LIVING)]
         while len(slots) < len(living):
@@ -309,17 +305,17 @@ def fill_s140(template_bytes, data):
             slots.append(clone)
         for k, item in enumerate(living):
             tr = slots[k]
-            _S(tr, 1, _part(n, item))
+            _S(tr, 1, _part(n, item, minutes_word))
             _S(tr, 2, "")
             _S(tr, 3, item.get("name", ""))
             n += 1
         drop += slots[len(living):]
 
         cbs = w["cbs"]
-        _S(blk["cbs"], 1, _part(n, cbs))
+        _S(blk["cbs"], 1, _part(n, cbs, minutes_word))
         _S(blk["cbs"], 3, cbs.get("name", ""))
 
-        _S(blk["closing_song"], 1, _song(w.get("closing_song"), ga))
+        _S(blk["closing_song"], 1, _song(w.get("closing_song"), song_word))
         _S(blk["closing_song"], 3, w.get("closing_prayer", ""))
 
     for wi in range(len(weeks), len(date_rows)):
@@ -382,5 +378,5 @@ def fill_s140(template_bytes, data):
         cur = nxt
 
     out = io.BytesIO()
-    doc.save(out)
+    document.save(out)
     return out.getvalue()

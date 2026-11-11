@@ -24,7 +24,7 @@ export default async function PrintPage({ searchParams }: { searchParams: Promis
   }
   const partLabel = (r: { part_name: string | null; part_no: number | null; minutes: number | null; hall: string }) => {
     let label = r.part_name ?? "";
-    if (r.minutes && !label.toLowerCase().includes("min")) label += ` ${t("doc.minutes", { count: r.minutes })}`;
+    if (r.minutes && !label.toLowerCase().includes("min")) label += ` ${t("part.minutes", { count: r.minutes })}`;
     if (r.part_no) label = `${r.part_no}. ${label}`;
     if (r.hall !== "main_hall") label += ` · ${hallLabel(t, r.hall)}`;
     return label;

@@ -1,20 +1,19 @@
 name: Check
 
-# Runs on every pull request (and on main) so a broken change never reaches Vercel: the Next.js type check and
-# build, and the Python tests (the scheduling rules and every document) against a throwaway Postgres.
+# Runs on every pull request and push so a broken change never reaches Vercel: the message files (both languages),
+# the Next.js type check and build, and the Python tests (the scheduling rules and every document) against a
+# throwaway Postgres. The tests that need the published forms skip here, since the forms are not in the repository.
 on:
   pull_request:
   push:
-    branches: [main]
 
 jobs:
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      # placeholders: the build never connects to the database
-      DATABASE_URL: postgresql://user:password@localhost:5432/db
-      SESSION_SECRET: ci-only-not-a-real-secret-0123
+      # no DATABASE_URL: the build then skips creating tables and never connects to a database
+      SESSION_SECRET: ci-only-not-a-real-secret-0123456789
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,6 +21,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run check:messages
       - run: npm run typecheck
       - run: npm run build
 
@@ -47,5 +47,6 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-      - run: pip install -r requirements.txt pytest
-      - run: python -m pytest -q
+          cache-dependency-path: api/requirements.txt
+      - run: pip install -r api/requirements.txt pytest
+      - run: python -m pytest tests -q

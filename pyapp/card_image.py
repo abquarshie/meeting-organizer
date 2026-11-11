@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Assignment cards as images, for sharing on WhatsApp.
 
-Two cards, one look: the week (every part in both meetings) and one
+Two cards, one look: the week (every part in its midweek meeting) and one
 person's month. Each is built in two steps:
 
     spec = week_card_spec(...)   # plain data: what the card says
@@ -20,17 +20,17 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from constants import (
     APP_DIR,
-    EN_WORDS,
-    GA_WORDS,
     MAIN_HALL,
     MIDWEEK,
-    ROLE_LABELS_GA,
+    ROLE_LABELS,
     TRANSLATIONS,
+    WORDS,
 )
-from db import event_label, get_meeting_meta, get_setting, talk_text
-from parts import TALK_AND_PRAYER
-from sheets_pdf import SECTION_TITLES_BY_LANG, _part_title, clean_value
-from utils import fmt_date, month_label, week_start
+from db import event_label, get_meeting_meta, get_setting
+from i18n import doc, locale_for
+from sheets_pdf import (_month_name, _part_title, clean_value, month_name_in, section_titles,
+                        week_label_in)
+from utils import week_start
 
 SCALE = 2
 WIDTH = 720                    # points; the PNG is 1440 px wide
@@ -41,19 +41,20 @@ def S(v):
 
 
 # -------------------------------------------------------------------- palette
-INK = (23, 33, 43)
-MUTED = (104, 114, 126)
-FAINT = (150, 158, 168)
-PAPER = (242, 240, 235)
+INK = (29, 20, 36)
+MUTED = (110, 98, 120)
+FAINT = (156, 146, 166)
+PAPER = (247, 244, 249)
 CARD = (255, 255, 255)
-RULE = (232, 234, 238)
-HEAD_TOP = (22, 52, 82)        # header gradient, from the app's ink blue
-HEAD_BOTTOM = (36, 82, 122)
-ACCENT = (36, 82, 122)
+RULE = (230, 223, 236)
+HEAD_TOP = (58, 22, 80)        # header gradient, the app's plum
+HEAD_BOTTOM = (107, 47, 143)
+ACCENT = (107, 47, 143)
+MARIGOLD = (224, 165, 38)
 SECTION = {                    # the workbook's own section colours
     "Opening": (138, 148, 160), "Treasures": (91, 103, 112),
     "Ministry": (183, 130, 31), "Living": (142, 42, 42),
-    "Closing": (138, 148, 160), "Weekend": (31, 78, 95),
+    "Closing": (138, 148, 160),
 }
 ROOM = SECTION["Ministry"]
 
@@ -115,51 +116,28 @@ def fit(text, weight, size, width, smallest):
 
 
 # -------------------------------------------------------------- the wording
-# Card wording that has no Ga in the app yet stays English in both: only
-# wording already used on the printed sheets is given in Ga.
-CARD_TEXT = {
-    "title": "Meeting Assignments",
-    "footer": "Can’t take your part? Tell us early.",
-    "footer_one": "Can’t take one? Tell us early.",
-    "prepared": "Prepared",
-    "reader": "Reader",
-    "guest": "Guest",
-    "yours": "Your meeting assignments",
-    "no_meetings": "No meetings are scheduled that week.",
-    "hello": "Hello",
-}
-ROOM_SHORT_EN = {"aux_1": "Aux 1", "aux_2": "Aux 2"}
+# Everything the cards say comes from the message files ("card.", "doc.", "msg." keys), in the slip language.
+def _w(key, language, **values):
+    return doc(key, language, **values)
 
 
 def _words(language):
-    return GA_WORDS if language == "Ga" else EN_WORDS
+    return WORDS.get(language, WORDS["English"])
 
 
 def _room(hall, language):
     if not hall or hall == MAIN_HALL:
         return ""
-    if language == "Ga":
-        return TRANSLATIONS["Ga"].get(hall, hall)
-    return ROOM_SHORT_EN.get(hall, hall)
-
-
-def _plural(n, word):
-    return f"{n} {word}{'' if n == 1 else 's'}"
+    short = {"aux_1": "hall.aux1_short", "aux_2": "hall.aux2_short"}.get(hall)
+    return _w(short, language) if short else hall
 
 
 def _role_label(r, language):
     """What an unnumbered part is called on the card."""
-    words = _words(language)
-    if r.role == "Public Talk":
-        if language == "Ga":
-            return f"{words['public_talk']} & {words['closing_prayer']}"
-        return TALK_AND_PRAYER
-    if language == "Ga":
-        if r.role == "Watchtower Reader":
-            return f"{words['watchtower']} · {words['reader']}"
-        if r.role in ROLE_LABELS_GA and r.role != "Reader":
-            return ROLE_LABELS_GA[r.role]
-    return _part_title(r)
+    labels = ROLE_LABELS.get(language, ROLE_LABELS["English"])
+    if r.role in labels and r.role not in ("Reader", "Bible Study Conductor"):
+        return labels[r.role]
+    return _part_title(r, language)
 
 
 def _who(person, assistant):
@@ -169,17 +147,29 @@ def _who(person, assistant):
     return person
 
 
-def _prepared():
-    return f"{CARD_TEXT['prepared']} {fmt_date(date.today().isoformat(), short=True)} " \
-           f"{date.today().year}"
+def _prepared(language):
+    today = date.today()
+    return f"{_w('card.prepared', language)} {today.day} {_month_short(today, language)} {today.year}"
 
 
-def _week_heading(monday):
+def _month_short(day, language):
+    return _w("mname.short", language).split()[day.month - 1]
+
+
+def _day_name(day, language):
+    return _w(f"day.{('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')[day.weekday()]}", language)
+
+
+def _span(monday, language):
     sunday = monday + timedelta(days=6)
-    number = (monday.day - 1) // 7 + 1
-    span = (f"{monday.day}–{sunday.day} {sunday:%b %Y}" if monday.month == sunday.month
-            else f"{monday.day} {monday:%b} – {sunday.day} {sunday:%b %Y}")
-    return f"Week {number} of {monday:%B} · {span}"
+    if monday.month == sunday.month:
+        return f"{monday.day}–{sunday.day} {_month_short(sunday, language)} {sunday.year}"
+    return (f"{monday.day} {_month_short(monday, language)} – {sunday.day} "
+            f"{_month_short(sunday, language)} {sunday.year}")
+
+
+def _week_heading(monday, language="English"):
+    return week_label_in(monday, locale_for(language))
 
 
 # ---------------------------------------------------------------- the specs
@@ -187,74 +177,45 @@ def week_card_spec(schedules_df, week_of, language="English"):
     """Everything the week's card says, as plain data."""
     monday = week_start(week_of)
     lang = TRANSLATIONS.get(language, TRANSLATIONS["English"])
-    titles = SECTION_TITLES_BY_LANG.get(language, SECTION_TITLES_BY_LANG["English"])
+    titles = section_titles(language)
     words = _words(language)
     spec = {"kind": "week", "congregation": get_setting("congregation", ""),
-            "title": CARD_TEXT["title"], "subtitle": _week_heading(monday),
+            "title": _w("card.title", language), "subtitle": _week_heading(monday, language),
             "chip": "", "meetings": [], "empty": "",
-            "footer": [CARD_TEXT["footer"], _prepared()]}
+            "footer": [_w("card.footer", language), _prepared(language)]}
 
     special = event_label(monday, language)
     if special:                  # an assembly or convention week: its label only
         spec["meetings"].append({
-            "eyebrow": _week_heading(monday).split(" · ")[1].upper(),
+            "eyebrow": _span(monday, language).upper(),
             "title": special, "detail": "", "sections": []})
         return spec
 
     dates = schedules_df["meeting_date"].astype(str)
     rows = schedules_df[(dates >= monday.isoformat())
-                        & (dates <= (monday + timedelta(days=6)).isoformat())]
-    rows = rows.sort_values(["meeting_date", "meeting_type", "sort_order"])
+                        & (dates <= (monday + timedelta(days=6)).isoformat())
+                        & (schedules_df["meeting_type"] == MIDWEEK)]
+    rows = rows.sort_values(["meeting_date", "sort_order"])
     parts = 0
-    for (meeting_date, meeting_type), meeting in rows.groupby(
-            ["meeting_date", "meeting_type"], sort=False):
+    for meeting_date, meeting in rows.groupby("meeting_date", sort=False):
         meeting_date = str(meeting_date)
         day = datetime.strptime(meeting_date, "%Y-%m-%d").date()
-        meta = get_meeting_meta(meeting_date, meeting_type)
-        midweek = meeting_type == MIDWEEK
-        if midweek:
-            detail = " · ".join(b for b in (
-                clean_value(meta.get("book")) or clean_value(meta.get("heading")),
-                _song(meta.get("opening_song"), words)) if b)
-        else:
-            talk = talk_text(meta)
-            detail = f"{words['public_talk']} {talk}" if talk else ""
+        meta = get_meeting_meta(meeting_date, MIDWEEK)
+        detail = " · ".join(b for b in (
+            clean_value(meta.get("book")) or clean_value(meta.get("heading")),
+            _song(meta.get("opening_song"), words)) if b)
         sections = []
-        speakers_done = False
         for r in meeting.itertuples():
-            key = r.section or ("Living" if midweek else "Weekend")
-            if midweek and key == "Closing":      # the closing prayer ends Living
+            key = r.section or "Living"
+            if key == "Closing":      # the closing prayer ends Living
                 key = "Living"
-            if not midweek:
-                key = "Weekend"
             if not sections or sections[-1]["key"] != key:
-                sections.append({"key": key,
-                                 "title": titles.get(key, key) if midweek else "",
-                                 "rows": []})
+                sections.append({"key": key, "title": titles.get(key, key), "rows": []})
             sec = sections[-1]
-            if r.role == "Public Talk":
-                if speakers_done:                 # a symposium shares one line
-                    continue
-                speakers_done = True
-                talk_rows = meeting[meeting["role"] == "Public Talk"]
-                who = " & ".join(clean_value(p) for p in talk_rows["person"]
-                                 if clean_value(p))
-                guest = [clean_value(c) for v, c in zip(
-                    talk_rows.get("visitor", []), talk_rows.get("visitor_congregation", []))
-                    if clean_value(v)]
-                note = ""
-                if guest:
-                    label = words["guest_speaker"] if language == "Ga" else CARD_TEXT["guest"]
-                    note = " · ".join(b for b in (label, guest[0]) if b)
-                sec["rows"].append({"part": _role_label(r, language), "who": who,
-                                    "room": "", "note": note})
-                parts += 1
-                continue
             if r.role == "Reader" and sec["rows"] and clean_value(r.person):
                 # the study's reader sits under its conductor
-                label = words["reader"] if language == "Ga" else CARD_TEXT["reader"]
                 prev = sec["rows"][-1]
-                prev["note"] = f"{label}: {clean_value(r.person)}"
+                prev["note"] = f"{words['reader']}: {clean_value(r.person)}"
                 parts += 1
                 continue
             room = _room(r.hall if isinstance(r.hall, str) else MAIN_HALL, language)
@@ -262,19 +223,19 @@ def week_card_spec(schedules_df, week_of, language="English"):
                 room = _room("aux_1", language)
             numbered = r.part_no == r.part_no and r.part_no is not None   # not NaN
             sec["rows"].append({
-                "part": _part_title(r) if numbered else _role_label(r, language),
+                "part": _part_title(r, language) if numbered else _role_label(r, language),
                 "who": _who(r.person, r.assistant if r.needs_assistant == 1 else None),
                 "room": room, "note": ""})
             parts += 1
         spec["meetings"].append({
-            "eyebrow": f"{day:%A} · {day.day} {day:%B}".upper(),
-            "title": lang["midweek_meeting" if midweek else "weekend_meeting"],
+            "eyebrow": f"{_day_name(day, language)} · {day.day} {_month_name(day.month, locale_for(language))}".upper(),
+            "title": lang["midweek_meeting"],
             "detail": detail, "sections": sections})
     if not spec["meetings"]:
-        spec["empty"] = CARD_TEXT["no_meetings"]
+        spec["empty"] = _w("doc.no_meetings_week", language)
     else:
-        spec["chip"] = (f"{_plural(len(spec['meetings']), 'meeting')} · "
-                        f"{_plural(parts, 'part')}")
+        spec["chip"] = (_w("card.chip_part_one", language) if parts == 1
+                        else _w("card.chip_parts", language, count=parts))
     return spec
 
 
@@ -287,35 +248,30 @@ def _song(value, words):
 def person_card_spec(name, gender, month, items, language="English"):
     """One person's month as plain data. items: month_assignments_for()."""
     lang = TRANSLATIONS.get(language, TRANSLATIONS["English"])
-    title = "Sister" if gender == "Sister" else "Brother"
+    title = _w("cat.sister" if gender == "Sister" else "cat.brother", language)
     tiles = []
     for it in items:
         day = datetime.strptime(it["meeting_date"], "%Y-%m-%d").date()
-        midweek = it["meeting_type"] == MIDWEEK
         if it["as_assistant"]:
-            sub = f"assisting {it['partner']}" if it["partner"] else "as assistant"
+            sub = (_w("card.assisting", language, name=it["partner"]) if it["partner"]
+                   else _w("msg.as_assistant", language).lstrip("— "))
         elif it["partner"]:
-            sub = f"with {it['partner']} assisting"
+            sub = _w("card.with_assisting", language, name=it["partner"])
         else:
             sub = ""
-        if it.get("talk"):
-            sub = it["talk"]
-        if it.get("shared_with"):
-            sub = " · ".join(b for b in (sub, "shared with "
-                                         + " and ".join(it["shared_with"])) if b)
         tiles.append({
-            "day": str(day.day), "month": f"{day:%b}".upper(),
-            "eyebrow": f"{day:%A} · "
-                       f"{lang['midweek_meeting' if midweek else 'weekend_meeting']}".upper(),
+            "day": str(day.day), "month": _month_short(day, language).upper(),
+            "eyebrow": f"{_day_name(day, language)} · {lang['midweek_meeting']}".upper(),
             "part": it["part"], "sub": sub,
-            "section": it.get("section") or ("Ministry" if midweek else "Weekend"),
+            "section": it.get("section") or "Ministry",
             "room": _room(it.get("hall"), language)})
     return {"kind": "person", "congregation": get_setting("congregation", ""),
-            "title": f"{CARD_TEXT['hello']}, {title} {name}",
-            "subtitle": f"{CARD_TEXT['yours']} · {month_label(month)}",
-            "chip": _plural(len(tiles), "assignment"), "tiles": tiles,
-            "footer": [CARD_TEXT["footer_one"] if len(tiles) != 1
-                       else CARD_TEXT["footer"], _prepared()]}
+            "title": f"{_w('card.hello', language)}, {title} {name}",
+            "subtitle": f"{_w('card.yours', language)} · {month_name_in(month, locale_for(language))}",
+            "chip": (_w("card.chip_assignment_one", language) if len(tiles) == 1
+                     else _w("card.chip_assignments", language, count=len(tiles))), "tiles": tiles,
+            "footer": [_w("card.footer_one", language) if len(tiles) != 1
+                       else _w("card.footer", language), _prepared(language)]}
 
 
 # ------------------------------------------------------------------ drawing

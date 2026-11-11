@@ -10,7 +10,6 @@ datasource db {
 model audit_log {
   id      Int     @id @default(autoincrement())
   ts      String?
-  user    String?
   action  String?
   details String?
 }
@@ -25,8 +24,6 @@ model meetings {
   aux          Int?
   book         String?
   aux_group    String?
-  talk_number  String?
-  talk_title   String?
 
   @@id([meeting_date, meeting_type])
 }
@@ -37,22 +34,6 @@ model no_meeting_periods {
   end_date   String
   note       String?
   kind       String?
-}
-
-model outgoing_engagements {
-  id           Int     @id @default(autoincrement())
-  student_id   Int
-  meeting_date String
-  congregation String?
-  talk_number  String?
-
-  @@unique([student_id, meeting_date])
-}
-
-model outgoing_speakers {
-  student_id   Int     @id
-  talk_numbers String?
-  active       Int?    @default(1)
 }
 
 model schedules {
@@ -72,8 +53,6 @@ model schedules {
   assistant_name       String?
   sort_order           Int?    @default(0)
   hall                 String? @default("main_hall")
-  visitor              String?
-  visitor_congregation String?
 }
 
 model settings {
@@ -84,7 +63,6 @@ model settings {
 model snapshots {
   id           Int     @id @default(autoincrement())
   ts           String?
-  user         String?
   reason       String?
   meeting_date String?
   meeting_type String?
@@ -101,11 +79,6 @@ model students {
   groups          String?
   suspended       Int?    @default(0)
   suspended_until String?
-}
-
-model talks {
-  number String  @id
-  title  String?
 }
 
 model templates {

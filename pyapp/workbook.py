@@ -11,6 +11,7 @@ import streamlit as st
 
 from constants import MIDWEEK, STUDENT_ROLES, WEEKDAYS
 from db import get_conn, get_setting, is_no_meeting, log_change, saved_meetings, schema
+from i18n import ui
 from utils import infer_role, make_slot, nfc, role_matched
 
 # =============================================================================
@@ -22,14 +23,9 @@ MONTHS = ("JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|"
 WEEK_RE = re.compile(
     rf"\b(?:{MONTHS})\s+\d{{1,2}}\s*[-–—]\s*(?:(?:{MONTHS})\s+)?\d{{1,2}}\b"
 )
-# "4. Starting a Conversation (3 min.)" - the duration may sit on the next line.
-PART_RE = re.compile(
-    r"^[ \t]*(\d{1,2})\.[ \t]+([^\n]{2,90}?)[ \t]*\n?[ \t]*"
-    r"\((?:(\d{1,2})[ \t]*min\.?|min\.?[ \t]*(\d{1,2}))\)",
-    re.MULTILINE | re.IGNORECASE,
-)
-SONG_RE = re.compile(r"\b(?:Song|Lala)\s+(\d{1,3})\b", re.IGNORECASE)
-# Both editions. With the Ga headings recognised, sections are read from the
+# "Song 74" in the English workbook, "La 74" in the Dangme one (capital L only: "la" is a common Dangme word).
+SONG_RE = re.compile(r"(?:\b(?i:song)|\bLa)\s+(\d{1,3})\b")
+# Both editions. With the Dangme headings recognised, sections are read from the
 # page instead of being guessed from part numbers and durations.
 def _heading_re(*variants):
     """Headings wrap across lines in the printed workbook, so every gap between
@@ -40,12 +36,17 @@ def _heading_re(*variants):
 
 HEADING_RES = {
     "Treasures": _heading_re(
-        "TREASURES FROM GOD", "NY[ƆO]ŊM[ƆO] WIEM[ƆO] L[ƐE] MLI JWETRII"),
+        "TREASURES FROM GOD", "JUETLI N[ƐE] NG[ƐE] MAWU MUNYU"),
     "Ministry": _heading_re(
-        "APPLY YOURSELF TO THE FIELD MINISTRY", "KASEM[ƆO] B[ƆO] NI ASHI[ƐE][ƆO]"),
+        "APPLY YOURSELF TO THE FIELD MINISTRY", "MOO B[ƆO] FI[ƐE][ƐE]MI"),
     "Living": _heading_re(
-        "LIVING AS CHRISTIANS", "HII SHI AK[ƐE] KRISTOFONYO"),
+        "LIVING AS CHRISTIANS", "KRISTOFOHI A SI HIMI"),
 }
+
+
+def _is_bible_study(title):
+    low = (title or "").lower()
+    return "bible study" in low or "baiblo mi ní kasemi" in low
 
 
 def _classify(part_no, title, minutes, section):
@@ -53,26 +54,33 @@ def _classify(part_no, title, minutes, section):
         # No English headings found (e.g. another language): guess from numbers.
         if part_no <= 3:
             section = "Treasures"
-        elif minutes is not None and minutes >= 30 or "bible study" in title.lower():
+        elif minutes is not None and minutes >= 30 or _is_bible_study(title):
             section = "Living"
         else:
             section = None  # decided by the caller
     if section == "Treasures":
         role = {1: "Treasures Talk", 2: "Spiritual Gems"}.get(part_no, "Bible Reading")
     elif section == "Living":
-        is_cbs = "bible study" in title.lower() or (minutes or 0) >= 30
+        is_cbs = _is_bible_study(title) or (minutes or 0) >= 30
         role = "Bible Study Conductor" if is_cbs else "Living Part"
     elif section == "Ministry":
         role = infer_role(title, "Ministry")
         if role not in STUDENT_ROLES:
-            role = "Student Talk" if "talk" in title.lower() else "Initial Presentation"
+            low = title.lower()
+            role = "Student Talk" if "talk" in low or "munyu tumi" in low else "Initial Presentation"
     else:
         role = None
     return section, role
 
 
 NUM_LINE_RE = re.compile(r"^[ \t]*(\d{1,2})\.[ \t]+(\S.*)$")
-DUR_RE = re.compile(r"\((?:(\d{1,2})[ \t]*min\.?|min\.?[ \t]*(\d{1,2}))\)", re.IGNORECASE)
+# "(3 min.)" in the English workbook, "(Hɛngm. 3)" or "(Hɛngm.1)" in the Dangme one.
+DUR_RE = re.compile(r"\((?:(\d{1,2})[ \t]*min\.?|min\.?[ \t]*(\d{1,2})|hɛngm\.?[ \t]*(\d{1,2}))\)",
+                    re.IGNORECASE)
+
+
+def _minutes(match):
+    return int(match.group(1) or match.group(2) or match.group(3))
 
 
 def _clean_title(text):
@@ -102,7 +110,7 @@ def _find_parts(text):
             d = DUR_RE.search(chunk)
             if d:
                 title_bits.append(chunk[:d.start()])
-                minutes = int(d.group(1) or d.group(2))
+                minutes = _minutes(d)
                 break
             title_bits.append(chunk)
         title = _clean_title(" ".join(title_bits) if minutes else m.group(2))
@@ -151,7 +159,7 @@ def _parse_week(text):
 
 
 # A week heading is a capitalised word plus a day range, e.g. "SEPTEMBER 14-20"
-# or the same in Ga. Language-independent: the month word isn't looked up.
+# (the Dangme workbook prints the month in English too). Language-independent: the month word isn't looked up.
 # Leading bullets or box-drawing characters are common in exported PDFs, and
 # the dash may be any of several. The month word itself is never looked up.
 DASHES = "-\u2010\u2011\u2012\u2013\u2014\u2015\u2212"
@@ -211,7 +219,7 @@ def _timed_part_lines(lines):
 
 
 # ---------------------------------------------------------------- extraction
-# The Ga workbook's fonts carry no Unicode mapping, so a plain text extraction
+# The Dangme workbook's fonts carry no Unicode mapping, so a plain text extraction
 # returns ɛ ɔ ŋ as ½ Á ¿ and the capitals as control codes — and the codes are
 # assigned per font when the file is built, so they differ between faces and
 # between months. What does not change is the glyph NAME in each font's
@@ -286,7 +294,7 @@ def _encoding_for(font, encodings):
 
 
 def _repair(text, font, encodings):
-    """Put the Ga letters back. Anything still unmapped below space is an
+    """Put the Dangme letters back. Anything still unmapped below space is an
     ornament from a decorative font (rules, bullets, the music note)."""
     table = _encoding_for(font, encodings)
     text = "".join(table.get(c, c) for c in text)
@@ -314,11 +322,13 @@ def _fix_accents(text):
     for modifier, combining in ACCENTS:
         text = re.sub(r"\s*" + modifier + r"\s*(\w)",
                       lambda m: m.group(1) + combining, text)
+    # the accented i is printed as a dotless ı with the accent laid over it: "Nı́" is "Ní"
+    text = text.replace("\u0131\u0301", "i\u0301").replace("\u0131", "i")
     return unicodedata.normalize("NFC", text)
 
 
 def _pdf_pages(pdf_bytes):
-    """One string per page, with the Ga characters repaired.
+    """One string per page, with the Dangme characters repaired.
 
     PyMuPDF rather than pypdf: it reports the font of every run of text, which
     the repair needs, and pypdf glues words together on this workbook
@@ -351,7 +361,7 @@ def _pdf_pages(pdf_bytes):
     return pages
 
 
-@st.cache_data(show_spinner="Reading workbook…")
+@st.cache_data(show_spinner=False)
 def parse_brochure(pdf_bytes):
     """Split the workbook into weeks. A new week starts whenever the part
     numbering restarts; its heading is the first date line before part 1."""
@@ -387,9 +397,17 @@ def parse_brochure(pdf_bytes):
         head = heads[g] or {"label": f"Week {g + 1}", "month": None, "day": None,
                             "book": ""}
         label = head["label"]
+        parts, songs, gaps = _parse_week(text)
+        if label in weeks and parts and min(p["part_no"] for p in parts) > 1:
+            # a part continued elsewhere (the Dangme workbook finishes one on its back
+            # cover, under the week's date again): it belongs to that week, not a new one
+            week = weeks[label]
+            have = {p["part_no"] for p in week["parts"]}
+            week["parts"] = sorted(week["parts"] + [p for p in parts if p["part_no"] not in have],
+                                   key=lambda p: p["part_no"])
+            continue
         if label in weeks:
             label = f"{label} ({g + 1})"
-        parts, songs, gaps = _parse_week(text)
         if parts:
             weeks[label] = {"parts": parts, "songs": songs, "gaps": gaps,
                             "text": text.strip(), "month": head["month"],
@@ -515,7 +533,7 @@ def drop_past_weeks(weeks, today=None):
 
 def week_dates_text(w):
     if not w.get("start"):
-        return "no dates"
+        return ui("wb.no_dates")
     s_, e_ = (datetime.strptime(w[k], "%Y-%m-%d").date() for k in ("start", "end"))
     if s_.month == e_.month:
         return f"{s_.day}–{e_.day} {e_:%b %Y}"
@@ -561,15 +579,13 @@ def save_workbook(weeks, file_name):
             "INSERT INTO settings (key, value) VALUES ('workbook_file', ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (file_name,))
     _workbook.clear()
-    log_change("Workbook saved", f"{file_name or '(removed)'}: {len(weeks)} week(s)")
+    log_change(ui("log.workbook_saved"), f"{file_name or '—'}: {len(weeks)}")
 
 
-def meeting_day(meeting_type):
-    """Days after the Monday of its week that this meeting falls (Admin → Settings)."""
-    key = "midweek_day" if meeting_type == MIDWEEK else "weekend_day"
-    default = "Wednesday" if meeting_type == MIDWEEK else "Sunday"
-    name = get_setting(key, default)
-    return WEEKDAYS.index(name) if name in WEEKDAYS else WEEKDAYS.index(default)
+def meeting_day(meeting_type=MIDWEEK):
+    """Days after the Monday of its week that the midweek meeting falls (Admin → Settings)."""
+    name = get_setting("midweek_day", "Wednesday")
+    return WEEKDAYS.index(name) if name in WEEKDAYS else WEEKDAYS.index("Wednesday")
 
 
 def midweek_workbook_weeks(schedules_df):

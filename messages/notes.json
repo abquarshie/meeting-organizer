@@ -442,7 +442,19 @@
     "rem.line_assisting": "One part on a reminder card.",
     "people.inactive_suffix": "After a name in the list of participants.",
     "people.clash_line": "One meeting in the \"reassign these\" list.",
-    "admin.your_name_hint": "Hint under \"Your name\" in Admin > Settings"
+    "admin.your_name_hint": "Hint under \"Your name\" in Admin > Settings",
+    "part.minutes": "After a part title on screen, e.g. \"Bible Reading (4 min)\". The Dangme workbook writes “Hɛngm.”",
+    "rot.flag_inactive": "After a name in the list of people to pick, e.g. \"Kofi Mensah — 3 weeks ago · inactive\".",
+    "rot.flag_away": "After a name in the list of people to pick.",
+    "rot.flag_suspended": "After a name in the list of people to pick.",
+    "rot.tag_child": "After a name in the list of people to pick: this person is a child.",
+    "rot.tag_youth": "After a name in the list of people to pick: this person is a young person.",
+    "rot.tag_new": "After a name in the list of people to pick: a new student.",
+    "rot.assisted": "What someone last did, e.g. \"assisted, Bible Reading\".",
+    "rot.assisting": "What someone does next, e.g. \"assisting, Making Disciples\".",
+    "card.chip_parts": "On the week's share card: how many parts the week has.",
+    "card.chip_assignments": "On one person's share card: how many assignments they have that month.",
+    "doc.s140_minutes": "On the S-140, before the minutes: “(Min. 10)”. The Dangme S-140 writes “Hɛngm.”"
   },
   "sources": {
     "kw.sec_treasures": "Filled in from the Dangme workbook (Nov–Dec 2026).",
@@ -495,6 +507,9 @@
     "hall.aux2": "Filled in from the Dangme S-89 blank.",
     "people.col_name": "Filled in from the Dangme S-140 blank and S-89.",
     "rep.col_name": "Filled in from the Dangme S-140 blank and S-89.",
-    "rep.col_date": "Filled in from the Dangme S-89 blank; this is the slip's 'Date' line, a shorter word may suit a table."
+    "rep.col_date": "Filled in from the Dangme S-89 blank; this is the slip's 'Date' line, a shorter word may suit a table.",
+    "doc.s140_minutes": "S-140 (Dangme)",
+    "part.minutes": "Filled in from the Dangme workbook (Nov–Dec 2026), which writes “(Hɛngm. 10)”.",
+    "doc.minutes": "Filled in from the Dangme workbook (Nov–Dec 2026), which writes “(Hɛngm. 10)”."
   }
 }

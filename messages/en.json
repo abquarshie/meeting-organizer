@@ -232,8 +232,8 @@
     "mixed": "“{part}”: student and assistant are in different categories and not family.",
     "suspended": "{name} is suspended but still assigned.",
     "many_parts": "{name} has {count} parts in this meeting: {parts}",
-    "too_soon": "{name} had “{part}” {when} ({date} {meeting}) — someone else would usually take it this week.",
-    "also_has": "{name} already has “{part}” {when} ({date} {meeting}) as well.",
+    "too_soon": "{name} had “{part}” {when} ({date}) — someone else would usually take it this week.",
+    "also_has": "{name} already has “{part}” {when} ({date}) as well.",
     "whole_number": "“{part}”: the {field} should be a whole number, but it is {value}.",
     "part_number": "part number"
   },
@@ -241,7 +241,15 @@
     "resting": "this week",
     "never": "no parts yet",
     "conflict": "already scheduled",
-    "over_month": "over a month ago"
+    "over_month": "over a month ago",
+    "flag_inactive": "inactive",
+    "flag_away": "away",
+    "flag_suspended": "suspended",
+    "tag_child": "child",
+    "tag_youth": "youth",
+    "tag_new": "new",
+    "assisted": "assisted, {what}",
+    "assisting": "assisting, {what}"
   },
   "print": {
     "title": "Slips and printing",
@@ -685,7 +693,8 @@
     "cbs_reader": "Congregation Bible Study Reader",
     "explaining_your": "Explaining Your Beliefs",
     "talk": "Talk",
-    "a_part": "a part"
+    "a_part": "a part",
+    "minutes": "({count} min)"
   },
   "hall": {
     "main": "Main hall",
@@ -723,7 +732,8 @@
     "aux_counselor": "Auxiliary Classroom Counselor",
     "minutes": "({count} min.)",
     "prepared": "Prepared {date}",
-    "no_meetings_week": "No meetings are scheduled that week."
+    "no_meetings_week": "No meetings are scheduled that week.",
+    "s140_minutes": "Min."
   },
   "card": {
     "title": "Meeting Assignments",
@@ -734,7 +744,11 @@
     "prepared": "Prepared",
     "assisting": "assisting {name}",
     "with_assisting": "with {name} assisting",
-    "shared_with": "shared with {names}"
+    "shared_with": "shared with {names}",
+    "chip_parts": "{count} parts",
+    "chip_part_one": "1 part",
+    "chip_assignments": "{count} assignments",
+    "chip_assignment_one": "1 assignment"
   },
   "msg": {
     "week_title": "*Meeting assignments — {week}*",

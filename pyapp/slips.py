@@ -10,6 +10,7 @@ import pandas as pd
 
 from constants import HALLS, MAIN_HALL
 from db import load_template
+from i18n import ui
 from sheets_pdf import FONT_CANDIDATES
 from utils import fmt_date
 
@@ -35,13 +36,9 @@ def _open_blank(template_bytes):
                          key=lambda w: int(w.field_name.split("_")[1]))
     except Exception as exc:
         # PyMuPDF raises its own error types for a damaged or non-PDF file
-        raise S89Error(
-            "This file couldn't be read as the fillable S-89 blank form: "
-            f"{str(exc)[:120]}") from exc
+        raise S89Error(ui("err.s89_unreadable", reason=str(exc)[:120])) from exc
     if len(widgets) < 7:
-        raise S89Error(
-            f"Expected the S-89's form fields; found {len(widgets)}. "
-            "Upload the fillable blank form, not a scan or a printout.")
+        raise S89Error(ui("err.s89_fields", count=len(widgets)))
     return doc, [w.rect for w in widgets]
 
 
@@ -55,12 +52,12 @@ def fill_s89(template_bytes, slip_rows, lang=None):
 
     The text is drawn into the form's field rectangles and the fields removed,
     rather than set as form values: the form's own font carries no ɛ ɔ ŋ, so a
-    filled field would silently drop them from Ga names.
+    filled field would silently drop them from names.
     """
     font_path = next((str(regular) for regular, _ in FONT_CANDIDATES
                       if regular and Path(regular).exists()), None)
     if font_path is None:
-        raise S89Error("No font with ɛ, ɔ and ŋ was found for the slips.")
+        raise S89Error(ui("err.no_font"))
     # the rectangles come from the template: copying a page does not copy its
     # form fields, so the copies have none to read
     template, boxes = _open_blank(template_bytes)
@@ -125,7 +122,5 @@ def slips_pdf(slip_rows, lang, language_name):
     """
     blank, _ = load_template(f"s89_{language_name}")
     if not blank:
-        raise S89Error(
-            f"No blank S-89 has been uploaded for {language_name}. "
-            "Add one under Admin → Official S-89 blank.")
+        raise S89Error(ui("print.no_s89", language=ui(f"lang.{language_name.lower()}")))
     return fill_s89(blank, slip_rows, lang)

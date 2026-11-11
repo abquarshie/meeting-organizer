@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Fixed lists, roles and slip wording."""
 from pathlib import Path
-import unicodedata
+
+from i18n import doc
 
 # =============================================================================
 # CONSTANTS
@@ -12,13 +13,11 @@ APP_DIR = Path(__file__).resolve().parent
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 MIDWEEK = "Midweek Meeting"
-WEEKEND = "Weekend Meeting"
-MEETING_TYPES = [MIDWEEK, WEEKEND]
+MEETING_TYPES = [MIDWEEK]
 
 CATEGORIES = ["Brother", "Sister"]
 GROUPS = ["Child", "Youth", "New student"]
 GROUP_TAGS = {"Child": "child", "Youth": "youth", "New student": "new"}
-NO_FAMILY = "— none —"
 
 PRIVILEGES = [
     "Chairman",
@@ -34,22 +33,19 @@ PRIVILEGES = [
     "Bible Study Conductor",
     "Reader",
     "Aux Classroom Counselor",
-    "Weekend Chairman",
-    "Public Talk",
-    "Watchtower Reader",
 ]
 # Each part (role) is taken by people holding the privilege of the same name,
 # so the two lists are one. Every part is for brothers only, apart from these.
 ROLES = PRIVILEGES
 SISTER_ROLES = {"Initial Presentation", "Making Disciples", "Explaining Beliefs"}
 # Weeks with no regular meetings. Each shows a label wherever the week
-# appears, in the language of the page or printout: TRANSLATIONS["event_…"].
+# appears, in the language of the page or printout: TRANSLATIONS[language]["event_…"].
 EVENT_KINDS = ("assembly", "convention")
 EVENT_NAMES = {"assembly": "Circuit Assembly", "convention": "Convention"}
 
 # Roles the app no longer schedules. Saved assignments and privileges naming
 # them are cleared at start-up (db.init_db), after a restore, and on undo.
-REMOVED_ROLES = ("Watchtower Conductor",)
+REMOVED_ROLES = ("Watchtower Conductor", "Weekend Chairman", "Public Talk", "Watchtower Reader")
 STUDENT_ROLES = {
     "Bible Reading",
     "Initial Presentation",
@@ -68,14 +64,13 @@ HALL_NAMES = {
     "aux_1": "Auxiliary classroom 1",
     "aux_2": "Auxiliary classroom 2",
 }
-SECTIONS = ["Opening", "Treasures", "Ministry", "Living", "Closing", "Weekend"]
+SECTIONS = ["Opening", "Treasures", "Ministry", "Living", "Closing"]
 SECTION_TITLES = {
     "Opening": "Opening",
     "Treasures": "Treasures From God’s Word",
     "Ministry": "Apply Yourself to the Field Ministry",
     "Living": "Living as Christians",
     "Closing": "Closing",
-    "Weekend": "Weekend meeting",
 }
 
 # Colour carries meaning only: these three mark the workbook sections.
@@ -85,58 +80,27 @@ SECTION_COLORS = {
     "Living": "#8E2A2A",      # maroon
     "Opening": "#8A94A0",
     "Closing": "#8A94A0",
-    "Weekend": "#8A94A0",
 }
-# Roles printed in bold beside the name on the schedule sheet. Roles left out
-# here show the name alone, as the printed form does.
-# Printed role labels per slip language. A role with no entry prints the name
-# with no label, which is right where the part title already names the role
-# (the Ga sheet's "Buu Mɔɔ Nikasemɔ" row needs no "Conductor" beside it).
-ROLE_LABELS_GA = {
-    "Prayer": "Sɔlemɔ",
-    "Chairman": "Sɛinɔtalɔ",
-    "Weekend Chairman": "Sɛinɔtalɔ",
-    "Reader": "Kanelɔ",
-    "Watchtower Reader": "Kanelɔ",
-    "Aux Classroom Counselor": "Ŋaawolɔ",
-}
-GA_WORDS = {
-    "public_talk": "Maŋshiɛmɔ",
-    "watchtower": "Buu Mɔɔ Nikasemɔ",
-    "theme": "Saneyitso",
-    "guest_speaker": "Wielɔ ni afɔ lɛ nine",
-    "chairman": "Sɛinɔtalɔ",
-    "opening_prayer": "Sɔlemɔ",
-    "closing_prayer": "Sɔlemɔ",
-    "group": "Kuu",
-    "song": "Lala",
-    "speaker": "Wielɔ",
-    "reader": "Kanelɔ",
-    "weekend_schedule": "Otsi Naagbee Kpee He Gbɛjianɔtoo",
-}
-EN_WORDS = {
-    "public_talk": "Public Talk",
-    "watchtower": "Watchtower Study",
-    "theme": "Theme",
-    "guest_speaker": "Guest speaker",
-    "chairman": "Chairman",
-    "opening_prayer": "Opening Prayer",
-    "closing_prayer": "Closing Prayer",
-    "group": "Group",
-    "song": "Song",
-    "speaker": "Speaker",
-    "reader": "Reader",
-    "weekend_schedule": "Weekend Meeting Schedule",
-}
-ROLE_LABELS = {
-    "Prayer": "Prayer",
-    "Chairman": "Chairman",
-    "Weekend Chairman": "Chairman",
-    "Bible Study Conductor": "Conductor",
-    "Reader": "Reader",
-    "Watchtower Reader": "Reader",
-    "Aux Classroom Counselor": "Auxiliary Classroom Counselor",
-}
+# The printed wording, per slip language, from the message files (messages/*.json, "doc." keys). Roles printed
+# beside the name on the schedule sheet; a role with no entry prints the name alone, as the printed form does.
+def _words(language):
+    def w(key):
+        return doc(f"doc.{key}", language)
+    return {
+        "chairman": w("chairman"), "opening_prayer": w("opening_prayer"),
+        "closing_prayer": w("closing_prayer"), "group": w("group"), "song": w("song"),
+        "reader": w("reader"),
+    }
+
+
+def _role_labels(language):
+    def w(key):
+        return doc(f"doc.{key}", language)
+    return {
+        "Prayer": w("prayer"), "Chairman": w("chairman"), "Bible Study Conductor": w("conductor"),
+        "Reader": w("reader"), "Aux Classroom Counselor": w("aux_counselor"),
+    }
+
 
 # Nobody takes the same part two meetings running: a chairman this week is
 # given something else next week. Held to only when somebody else qualifies —
@@ -166,34 +130,24 @@ THIS_WEEK = (RESTING, "this week")
 # "had this last week", so it gets its own colour rather than sharing red.
 CONFLICT = ("🟠", "already scheduled")
 
-GA_CHARS = "ɛɔŋƐƆŊ"
+# Letters a font must have for names and Dangme wording to print.
+SPECIAL_CHARS = "ɛɔŋƐƆŊ"
 
-# NOTE: the Ga wording below only has its casing fixed. Replace it with the
-# exact text printed on the official Ga S-89 so the slips match the paper form.
-# Wording that appears on the printed schedule sheets. The slips are printed
-# on the official blank S-89, so its own wording lives on that form and is not
-# copied here.
-TRANSLATIONS = {
-    "English": {
-        "main_hall": "Main hall",
-        "aux_1": "Auxiliary classroom 1",
-        "aux_2": "Auxiliary classroom 2",
-        "midweek_meeting": "Midweek Meeting",
-        "weekend_meeting": "Weekend Meeting",
-        "event_assembly": "Assembly Week",
-        "event_convention": "Convention Week",
-    },
-    "Ga": {
-        "main_hall": "Asa 1",
-        "aux_1": "Asa 2",
-        "aux_2": "Asa 3",
-        "midweek_meeting": "Wɔshiɛmɔ Kɛ Wɔshihilɛ Kpee",
-        "weekend_meeting": "Otsi Naagbee Kpee",
-        "event_assembly": "Kpokpaa Nɔ Kpee Otsi",
-        "event_convention": "Kpokpaa wulu Nɔ Kpee Otsi",
-    },
-}
-TRANSLATIONS = {
-    lang: {k: unicodedata.normalize("NFC", v) for k, v in strings.items()}
-    for lang, strings in TRANSLATIONS.items()
-}
+# The slip languages: what slips, schedule sheets, the S-140 and the messages are printed in.
+LANGUAGES = ["English", "Dangme"]
+
+
+def _translations(language):
+    return {
+        "main_hall": doc("hall.main", language),
+        "aux_1": doc("hall.aux1", language),
+        "aux_2": doc("hall.aux2", language),
+        "midweek_meeting": doc("mt.midweek", language),
+        "event_assembly": doc("ev.assembly_week", language),
+        "event_convention": doc("ev.convention_week", language),
+    }
+
+
+TRANSLATIONS = {language: {**_translations(language), "_language": language} for language in LANGUAGES}
+WORDS = {language: _words(language) for language in LANGUAGES}
+ROLE_LABELS = {language: _role_labels(language) for language in LANGUAGES}

@@ -241,7 +241,15 @@
     "resting": "",
     "never": "",
     "conflict": "",
-    "over_month": ""
+    "over_month": "",
+    "flag_inactive": "",
+    "flag_away": "",
+    "flag_suspended": "",
+    "tag_child": "",
+    "tag_youth": "",
+    "tag_new": "",
+    "assisted": "",
+    "assisting": ""
   },
   "print": {
     "title": "",
@@ -685,7 +693,8 @@
     "cbs_reader": "",
     "explaining_your": "Tsɔɔ Níhi Nɛ O Heɔ Yeɔ Mi",
     "talk": "Munyu Tumi",
-    "a_part": ""
+    "a_part": "",
+    "minutes": "(Hɛngm. {count})"
   },
   "hall": {
     "main": "Asa a nɔ",
@@ -721,9 +730,10 @@
     "reader": "Kanelɔ",
     "conductor": "Nɔ Hyɛlɔ",
     "aux_counselor": "Tsu Wayo ɔ Mi Ga Wolɔ",
-    "minutes": "",
+    "minutes": "(Hɛngm. {count})",
     "prepared": "",
-    "no_meetings_week": ""
+    "no_meetings_week": "",
+    "s140_minutes": "Hɛngm."
   },
   "card": {
     "title": "",
@@ -734,7 +744,11 @@
     "prepared": "",
     "assisting": "",
     "with_assisting": "",
-    "shared_with": ""
+    "shared_with": "",
+    "chip_parts": "",
+    "chip_part_one": "",
+    "chip_assignments": "",
+    "chip_assignment_one": ""
   },
   "msg": {
     "week_title": "",

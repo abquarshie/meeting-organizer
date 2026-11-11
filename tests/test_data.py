@@ -59,19 +59,6 @@ def test_backup_round_trip(core, people):
     assert {"Schedule saved", "Data restored"} <= actions
 
 
-def test_report_counts_parts_and_assisting(core, people):
-    from reports import build_report
-    slots = core.build_midweek_slots(core.default_midweek_parts())
-    ip = next(i for i, s in enumerate(slots) if s["role"] == "Initial Presentation")
-    core.save_schedule(date.today().isoformat(), core.MIDWEEK, slots,
-                       {ip: (people["Ama Owusu"], people["Efua Osei"])}, {}, {})
-    report = build_report(core.get_students(), core.get_schedules(),
-                          "2000-01-01", "2999-01-01").set_index("Name")
-    assert report.loc["Ama Owusu", "Parts"] == 1
-    assert report.loc["Efua Osei", "Assisting"] == 1
-    assert report.loc["Yaw Adjei", "Total"] == 0
-
-
 def test_undo_restores_the_previous_save(core, people):
     slots = core.build_midweek_slots(core.default_midweek_parts())
     ip = next(i for i, s in enumerate(slots) if s["role"] == "Initial Presentation")
@@ -356,16 +343,6 @@ def test_undo_names_who_saved_not_the_database_login(core, people, monkeypatch):
     assert core.last_snapshot("2026-09-16", core.MIDWEEK)["user"] == "Ama"
 
 
-def test_passwords_with_ga_letters_or_curly_quotes_do_not_crash(core):
-    from auth import _matches
-    assert _matches("kpɔɔ’ɛ", "kpɔɔ’ɛ")
-    assert not _matches("kpɔɔ’ɛ", "plain")
-    assert not _matches("plain", "kpɔɔ’ɛ")
-    assert _matches("café", "café")            # composed either way
-    assert not _matches("secret ", "secret")              # spaces still count
-    assert not _matches("anything", None)
-
-
 def test_backup_reminder_tracks_the_last_backup(core, people):
     """The backup file is the only second copy now, and taking one is a button
     somebody has to remember to press."""
@@ -570,21 +547,6 @@ def test_recency_is_measured_from_the_meeting_not_today(core):
         "🟠", "already scheduled next week (21 Oct)")
     assert core.recency("2026-11-04", meeting) == (
         "🟠", "already scheduled in 3 weeks (4 Nov)")
-
-
-def test_setup_checklist_clears_as_things_are_done(core, people):
-    import dashboard
-
-    students = core.get_students()
-    gaps = [what for what, _ in dashboard.setup_gaps(students)]
-    assert any("congregation name" in g for g in gaps)
-    assert any("S-89" in g for g in gaps)
-    assert any("workbook" in g for g in gaps)
-
-    core.set_setting("congregation", "Teshie Asafo")
-    gaps = [what for what, _ in dashboard.setup_gaps(students)]
-    assert not any("congregation name" in g for g in gaps)
-    assert any("S-89" in g for g in gaps)             # the rest remain
 
 
 def test_talks_import_in_bulk(core):

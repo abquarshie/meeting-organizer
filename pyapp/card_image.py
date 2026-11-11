@@ -78,9 +78,9 @@ _fonts = {}
 def font(weight, size):
     key = (weight, size)
     if key not in _fonts:
-        path = Path(APP_DIR) / FONT_FILES[weight]
+        path = Path(APP_DIR) / "fonts" / FONT_FILES[weight]
         if not path.is_file():
-            path = Path(APP_DIR) / FALLBACK[weight]
+            path = Path(APP_DIR) / "fonts" / FALLBACK[weight]
         try:
             _fonts[key] = ImageFont.truetype(str(path), S(size))
         except OSError:                                  # pragma: no cover

@@ -15,5 +15,3 @@ from slips import *  # noqa: F401,F403
 from picking import *  # noqa: F401,F403
 from s140 import *  # noqa: F401,F403
 from backup import *  # noqa: F401,F403
-from auth import *  # noqa: F401,F403
-from ui import *  # noqa: F401,F403

@@ -8,10 +8,10 @@ from pathlib import Path
 import psycopg
 import pytest
 
-ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
-
-APP = str(ROOT / "app.py")
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "pyapp"))
+sys.path.insert(0, str(ROOT / "api"))
+import st_shim  # noqa: E402,F401  (a stand-in for Streamlit, as on Vercel)
 
 
 DSN = os.environ.get("MEETING_DSN")
@@ -129,7 +129,7 @@ def english_workbook(tmp_path):
 
 @pytest.fixture
 def ga_workbook(tmp_path):
-    font = str(ROOT / "DejaVuSans.ttf")  # the app's own font has ɛ ɔ ŋ
+    font = str(ROOT / "pyapp" / "fonts" / "DejaVuSans.ttf")  # the app's own font has ɛ ɔ ŋ
     first = week_lines("SƐPTƐMBA 14-20", "YESAIA 60-62", 4, "B", False, "Lala")
     return _pdf(tmp_path / "ga.pdf", [
         week_lines("SƐPTƐMBA 7-13", "YESAIA 58-59", 2, "A", False, "Lala"),
@@ -160,18 +160,3 @@ def s140_template(tmp_path):
     return path.read_bytes()
 
 
-def run(at):
-    # AppTest does not follow st.switch_page from one run to the next; a
-    # browser does (it is in the address). Start each run on the page the
-    # last one ended on, as a browser would.
-    try:
-        at._page_hash = at.session_state["_nav_hash"]
-    except (KeyError, AttributeError):
-        pass
-    at.run(timeout=90)
-    assert not at.exception, at.exception
-    return at
-
-
-def button(at, label):
-    return next(b for b in at.button if b.label == label)

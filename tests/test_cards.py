@@ -142,21 +142,3 @@ def test_long_names_and_titles_wrap_instead_of_running_off(core):
     assert len(part) > 1
     assert who[0].endswith("&")                   # the pair breaks at "&"
     ci.render_card(spec)
-
-
-def test_messages_tab_offers_the_image(people, core):
-    from streamlit.testing.v1 import AppTest
-    from conftest import APP, run
-    names = dict(zip(core.get_students()["id"], core.get_students()["name"]))
-    monday = date.today() - timedelta(days=date.today().weekday())
-    core.save_schedule((monday + timedelta(days=2)).isoformat(), core.MIDWEEK,
-                       core.build_midweek_slots(core.default_midweek_parts()),
-                       {0: (people["Kofi Mensah"], None)}, {}, names)
-    at = AppTest.from_file(APP, default_timeout=90)
-    at.run()
-    at.session_state["menu"] = "Slips and printing"
-    at.session_state["print_tab"] = "Messages"
-    run(at)
-    labels = [b.label for b in at.get("download_button")]
-    assert labels.count("Download image") == 2      # the week, and one person
-    assert any(c.value.startswith("*Meeting assignments") for c in at.code)

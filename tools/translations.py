@@ -152,10 +152,13 @@ def _guide_translations():
             continue
         english = [line for kind, line in _blocks((ROOT / source).read_text(encoding="utf-8")) if kind == "text"]
         dangme = [line for kind, line in _blocks(target.read_text(encoding="utf-8")) if kind == "text"
-                  and line != NOT_YET]
+                  and line not in (NOT_YET, _localise(NOT_YET, GUIDES[key][1]))]
+        # a line counts as translated only when it is none of the English lines: lines move when the English
+        # guide is edited, and an English line must never be taken for its own translation
+        known = {_localise(e, target.name if key == "guide.readme" else f"docs/{target.name}") for e in english}
         if len(dangme) == len(english):
-            for n, (e, d) in enumerate(zip(english, dangme), 1):
-                if d != _localise(e, GUIDES[key][1]):
+            for n, d in enumerate(dangme, 1):
+                if d not in known:
                     out[f"{key}.{n:03d}"] = d
     return out
 
@@ -194,7 +197,8 @@ def import_(path):
                 continue
             value = unicodedata.normalize("NFC", str(dangme).strip()) if dangme is not None else ""
             if key.startswith("guide."):
-                guides[key] = value
+                # keep a guide line's leading spaces: they carry the list indentation
+                guides[key] = unicodedata.normalize("NFC", str(dangme).rstrip()) if value else ""
             elif key in en:
                 ada[key] = value
             else:
